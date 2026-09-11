@@ -1,0 +1,13 @@
+{
+  "name": "duelou-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "start": "node --experimental-sqlite server.mjs",
+    "test": "node --experimental-sqlite --test server.test.mjs rooms.test.mjs"
+  }
+}

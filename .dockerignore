@@ -1,0 +1,9 @@
+node_modules
+data
+work
+dist
+dist-web
+.expo
+.env
+.env.local
+*.log

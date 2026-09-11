@@ -1,0 +1,11 @@
+node_modules/
+.expo/
+dist/
+dist-web/
+data/
+.env
+.env.local
+*.log
+work/
+backups/
+.claude/
