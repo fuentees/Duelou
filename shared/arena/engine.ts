@@ -62,12 +62,19 @@ export type ArenaState = {
   playerBaseHp: number; // 0..100
   enemyBaseHp: number; // 0..100
   troops: Troop[];
-  combo: number;
-  stats: ArenaStats;
+  // Por lado, não um número único — no PvP os dois lados são jogadores de
+  // verdade respondendo desafios; no modo offline, só o lado "player" é
+  // atualizado (o bot não responde desafio, então "enemy" fica sempre em 0).
+  combo: Record<Side, number>;
+  stats: Record<Side, ArenaStats>;
   over: boolean;
   winner: Side | "draw" | null;
   nextTroopId: number;
 };
+
+function emptyStats(): ArenaStats {
+  return { troopsSpawned: 0, challengesTotal: 0, hits: 0, maxCombo: 0 };
+}
 
 export function createArenaState(durationSeconds = 100): ArenaState {
   return {
@@ -75,8 +82,8 @@ export function createArenaState(durationSeconds = 100): ArenaState {
     playerBaseHp: 100,
     enemyBaseHp: 100,
     troops: [],
-    combo: 0,
-    stats: { troopsSpawned: 0, challengesTotal: 0, hits: 0, maxCombo: 0 },
+    combo: { player: 0, enemy: 0 },
+    stats: { player: emptyStats(), enemy: emptyStats() },
     over: false,
     winner: null,
     nextTroopId: 1,
@@ -117,7 +124,7 @@ export function spawn(
     maxHp: config.hp,
     position: side === "player" ? 0 : 100,
   });
-  state.stats.troopsSpawned++;
+  state.stats[side].troopsSpawned++;
   return true;
 }
 

@@ -26,16 +26,19 @@ export default function ResultCard({
   onMenu: () => void;
   onError?: (message: string) => void;
 }) {
+  // Sempre a perspectiva de quem está vendo a tela — em PvP, o cliente já
+  // recebe o estado invertido pra "player" ser sempre "eu" (ver Ticket 21).
+  const stats = state.stats.player;
   const outcome =
     state.winner === "player" ? "VITÓRIA" : state.winner === "enemy" ? "DERROTA" : "EMPATE";
-  const accuracy = state.stats.challengesTotal
-    ? Math.round((100 * state.stats.hits) / state.stats.challengesTotal)
+  const accuracy = stats.challengesTotal
+    ? Math.round((100 * stats.hits) / stats.challengesTotal)
     : 0;
   const won = state.winner === "player";
   const highlight = won
     ? comeback
       ? "Virou nos últimos segundos!"
-      : state.stats.maxCombo >= 6
+      : stats.maxCombo >= 6
         ? "Sequência impecável de acertos!"
         : "Base inimiga derrubada!"
     : state.winner === "enemy"
@@ -47,7 +50,7 @@ export default function ResultCard({
   const shareText = [
     "Duelou · Arena Rush",
     `${outcome} — base final ${Math.round(state.playerBaseHp)} × ${Math.round(state.enemyBaseHp)}`,
-    `Maior combo: x${state.stats.maxCombo} · ${state.stats.hits} bonecos invocados · ${accuracy}% de acerto`,
+    `Maior combo: x${stats.maxCombo} · ${stats.hits} bonecos invocados · ${accuracy}% de acerto`,
     highlight,
   ].join("\n");
 
@@ -68,8 +71,8 @@ export default function ResultCard({
         </View>
       </View>
       <View style={s.statsRow}>
-        <Text style={s.stat}>🔥 combo máx. x{state.stats.maxCombo}</Text>
-        <Text style={s.stat}>⚔ {state.stats.hits} bonecos</Text>
+        <Text style={s.stat}>🔥 combo máx. x{stats.maxCombo}</Text>
+        <Text style={s.stat}>⚔ {stats.hits} bonecos</Text>
         <Text style={s.stat}>🎯 {accuracy}% de acerto</Text>
       </View>
       {showTutorialInfo && (

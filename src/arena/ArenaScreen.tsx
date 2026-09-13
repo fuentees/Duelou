@@ -111,7 +111,7 @@ export default function ArenaScreen({
     if (nextChallengeTimer.current) clearTimeout(nextChallengeTimer.current);
     nextChallengeTimer.current = setTimeout(() => {
       if (screenRef.current !== "playing") return;
-      setChallenge(nextChallenge(random, state.stats.challengesTotal));
+      setChallenge(nextChallenge(random, state.stats.player.challengesTotal));
       setChallengeSeq((n) => n + 1);
     }, NEXT_CHALLENGE_DELAY_MS);
   };
@@ -123,17 +123,17 @@ export default function ArenaScreen({
   const handleAnswer = (correct: boolean, elapsedMs: number) => {
     const state = arenaRef.current;
     const kind = challenge?.kind;
-    state.stats.challengesTotal++;
+    state.stats.player.challengesTotal++;
     if (!correct) {
-      state.combo = 0;
+      state.combo.player = 0;
       playFail();
     } else {
-      state.combo++;
-      state.stats.maxCombo = Math.max(state.stats.maxCombo, state.combo);
+      state.combo.player++;
+      state.stats.player.maxCombo = Math.max(state.stats.player.maxCombo, state.combo.player);
       const fast = kind === "reflex" ? elapsedMs < FAST_REFLEX_MS : elapsedMs < FAST_CHOICE_MS;
-      const troopType = decideTroopType(fast, state.combo);
+      const troopType = decideTroopType(fast, state.combo.player);
       spawn(state, "player", troopType);
-      state.stats.hits++;
+      state.stats.player.hits++;
       playSuccess();
     }
     rerender();
@@ -352,9 +352,9 @@ export default function ArenaScreen({
           />
           <View style={s.row}>
             <Text style={s.caption}>Tempo restante: {Math.ceil(state.timeRemaining)}s</Text>
-            {state.combo >= 2 && (
+            {state.combo.player >= 2 && (
               <Text style={s.combo} accessibilityLiveRegion="polite">
-                🔥 combo x{state.combo}
+                🔥 combo x{state.combo.player}
               </Text>
             )}
           </View>
