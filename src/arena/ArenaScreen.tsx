@@ -3,6 +3,7 @@ import { AppState, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   ArenaState,
+  Side,
   TroopType,
   createArenaState,
   spawn,
@@ -10,6 +11,8 @@ import {
 } from "../../shared/arena/engine";
 import { ArenaChallenge, nextChallenge, resetChallengeSequence } from "./challenges";
 import ChallengePanel from "./ChallengePanel";
+import Troop from "./Troop";
+import { ENEMY_COLOR, PLAYER_COLOR } from "./colors";
 import { playFail, playSuccess } from "../audio/sounds";
 import { palette, radius } from "../theme";
 import Button from "../components/Button";
@@ -25,12 +28,10 @@ const FAST_REFLEX_MS = 340;
 // Pequena pausa depois de responder, pra dar tempo de ver o feedback
 // certo/errado antes do próximo desafio aparecer.
 const NEXT_CHALLENGE_DELAY_MS = 280;
-// A paleta compartilhada não tem um azul de verdade (cyan/violet são os mais
-// próximos, mas nenhum lê como "time azul" claramente) — cor local só pra
-// distinguir os dois lados, junto com a paleta existente pro resto (rosa e
-// âmbar já existem em src/theme.ts).
-const PLAYER_COLOR = "#2D6CDF";
-const ENEMY_COLOR = palette.pink;
+// Quanto tempo o "poof" fica visível depois de uma tropa morrer.
+const POOF_DURATION_MS = 350;
+
+type Poof = { key: number; position: number; side: Side };
 
 export default function ArenaScreen() {
   const [screen, setScreen] = useState<Screen>("start");
@@ -56,6 +57,14 @@ export default function ArenaScreen() {
   const [challenge, setChallenge] = useState<ArenaChallenge | null>(null);
   const [challengeSeq, setChallengeSeq] = useState(0);
   const nextChallengeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [laneHeight, setLaneHeight] = useState(0);
+  const [poofs, setPoofs] = useState<Poof[]>([]);
+  const poofSeq = useRef(0);
+  // Guarda a posição de cada tropa no tick anterior — quando uma morre, o
+  // evento troopDied não carrega posição (já foi removida do estado), então
+  // é daqui que tiramos "mais ou menos onde" pra colocar o poof.
+  const lastPositions = useRef<Map<number, { position: number; side: Side }>>(new Map());
 
   const queueNextChallenge = () => {
     const state = arenaRef.current;
@@ -105,6 +114,22 @@ export default function ArenaScreen() {
       spawn(state, "enemy", "soldier");
     }
     const events = step(state, dt, random);
+    const died = events.filter((e) => e.type === "troopDied") as Extract<
+      (typeof events)[number],
+      { type: "troopDied" }
+    >[];
+    if (died.length) {
+      const newPoofs = died.map((e) => ({
+        key: poofSeq.current++,
+        position: lastPositions.current.get(e.id)?.position ?? (e.side === "player" ? 100 : 0),
+        side: e.side,
+      }));
+      setPoofs((prev) => [...prev, ...newPoofs]);
+      newPoofs.forEach((p) => {
+        setTimeout(() => setPoofs((prev) => prev.filter((x) => x.key !== p.key)), POOF_DURATION_MS);
+      });
+    }
+    lastPositions.current = new Map(state.troops.map((t) => [t.id, { position: t.position, side: t.side }]));
     rerender();
     if (events.some((e) => e.type === "matchOver")) {
       setScreenState("end");
@@ -144,6 +169,8 @@ export default function ArenaScreen() {
     arenaRef.current = createArenaState(MATCH_SECONDS);
     lastTsRef.current = null;
     botClockRef.current = 0;
+    lastPositions.current = new Map();
+    setPoofs([]);
     resetChallengeSequence();
     setChallenge(nextChallenge(random, 0));
     setChallengeSeq((n) => n + 1);
@@ -181,18 +208,24 @@ export default function ArenaScreen() {
       ) : screen === "playing" ? (
         <View style={s.match}>
           <HealthBar label="BASE INIMIGA" hp={state.enemyBaseHp} color={ENEMY_COLOR} />
-          <View style={s.lane}>
+          <View style={s.lane} onLayout={(e) => setLaneHeight(e.nativeEvent.layout.height)}>
             {state.troops.map((troop) => (
-              <View
-                key={troop.id}
+              <Troop key={troop.id} troop={troop} laneHeight={laneHeight} />
+            ))}
+            {poofs.map((p) => (
+              <Text
+                key={p.key}
+                accessibilityElementsHidden
                 style={[
-                  s.troop,
+                  s.poof,
                   {
-                    backgroundColor: troop.side === "player" ? PLAYER_COLOR : ENEMY_COLOR,
-                    bottom: `${troop.position}%`,
+                    top: laneHeight * (1 - p.position / 100) - 10,
+                    color: p.side === "player" ? PLAYER_COLOR : ENEMY_COLOR,
                   },
                 ]}
-              />
+              >
+                💥
+              </Text>
             ))}
           </View>
           <HealthBar label="SUA BASE" hp={state.playerBaseHp} color={PLAYER_COLOR} />
@@ -257,13 +290,11 @@ const s = StyleSheet.create({
     overflow: "hidden",
     position: "relative",
   },
-  troop: {
+  poof: {
     position: "absolute",
     left: "50%",
-    marginLeft: -10,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    marginLeft: -12,
+    fontSize: 22,
   },
   row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   combo: { fontSize: 13, fontWeight: "900", color: palette.amber },
