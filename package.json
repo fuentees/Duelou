@@ -14,7 +14,7 @@
     "web:8083": "expo start --web --port 8083",
     "typecheck": "tsc --noEmit",
     "api": "node --experimental-sqlite server/server.mjs",
-    "test:api": "node --experimental-sqlite --test server/server.test.mjs server/rooms.test.mjs server/skillGames.test.mjs server/competitive.test.mjs server/continuation.test.mjs server/rate-limit.test.mjs server/operations.test.mjs server/battle.test.mjs server/arena-challenges.test.mjs server/arena-match.test.mjs server/arena-persistence.test.mjs",
+    "test:api": "node --experimental-sqlite --test server/server.test.mjs server/rooms.test.mjs server/skillGames.test.mjs server/competitive.test.mjs server/continuation.test.mjs server/rate-limit.test.mjs server/operations.test.mjs server/battle.test.mjs server/arena-challenges.test.mjs server/arena-match.test.mjs server/arena-persistence.test.mjs server/arena-queue.test.mjs",
     "test:ui": "node --experimental-sqlite scripts/check-unified-games.mjs",
     "test:character": "node scripts/check-character.mjs",
     "test:sync": "node scripts/check-campaign-sync.mjs",
