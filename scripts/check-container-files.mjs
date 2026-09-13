@@ -5,6 +5,7 @@ import {
   copyFileSync,
   cpSync,
   statSync,
+  existsSync,
   readFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -45,6 +46,22 @@ for (const line of readFileSync("server/Dockerfile", "utf8")
       copyFileSync(source, join(destination, basename(source)));
     }
   }
+}
+// O Dockerfile também roda "npm ci" dentro de server/ antes de copiar o
+// código (Ticket 14) — sem isso aqui, importar server.mjs falharia pra
+// achar dependências reais como "ws", mesmo com todos os arquivos certos.
+const serverDir = join(root, "server");
+if (existsSync(join(serverDir, "package.json"))) {
+  // shell:true é necessário pro Windows achar "npm" (que é um .cmd, não um
+  // .exe) — seguro aqui porque os argumentos são todos literais fixos, sem
+  // nada vindo de fora que pudesse ser interpretado pelo shell.
+  const install = spawnSync("npm", ["ci", "--omit=dev", "--no-audit", "--no-fund"], {
+    cwd: serverDir,
+    shell: true,
+    encoding: "utf8",
+    windowsHide: true,
+  });
+  assert.equal(install.status, 0, install.stderr);
 }
 const entry = pathToFileURL(join(root, "server/server.mjs")).href;
 const result = spawnSync(

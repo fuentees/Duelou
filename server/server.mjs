@@ -4,6 +4,7 @@ import { rateLimiter } from "./rate-limit.mjs";
 import { persistence } from "./persistence.mjs";
 import http from "node:http";
 import { roomRoutes } from "./rooms.mjs";
+import { attachArenaRealtime } from "./arena-ws.mjs";
 import { DatabaseSync } from "node:sqlite";
 import { randomBytes, randomUUID, createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
@@ -391,8 +392,10 @@ if (
     backupStatus: () => operations?.status,
   });
   operations = startOperations({ dbPath });
+  const arenaRealtime = attachArenaRealtime(server, db, Date.now);
   const shutdown = () =>
     server.close(async () => {
+      arenaRealtime.stop();
       await operations.stop();
       db.close();
     });

@@ -134,6 +134,20 @@ export function createArenaChallenges({
     return { correct, elapsedMs: Math.max(0, now() - entry.issuedAt), kind: "choice" };
   }
 
+  /**
+   * Descarta um desafio pendente sem pontuar nada — usado por quem estiver
+   * ligando isso a partidas (arena-ws.mjs) pra limpar desafios órfãos
+   * quando uma partida termina antes do jogador responder o último
+   * desafio emitido, evitando que fiquem esquecidos em `pending` pra
+   * sempre.
+   */
+  function discard(challengeId) {
+    const entry = pending.get(challengeId);
+    if (!entry) return;
+    pending.delete(challengeId);
+    if (entry.timer) clearTimeoutFn(entry.timer);
+  }
+
   function forgetPlayer(playerId) {
     lastKindByPlayer.delete(playerId);
   }
@@ -144,5 +158,5 @@ export function createArenaChallenges({
     lastKindByPlayer.clear();
   }
 
-  return { issue, submit, forgetPlayer, stop };
+  return { issue, submit, discard, forgetPlayer, stop };
 }

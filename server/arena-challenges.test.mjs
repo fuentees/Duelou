@@ -154,6 +154,22 @@ test("reflexo: responder antes do disparo cancela o timer pendente (sem sobrar t
   assert.equal(scheduler.pendingCount(), 0, "o timer do go não deveria continuar pendente depois de já ter sido respondido");
 });
 
+test("discard() esquece um desafio pendente sem pontuar (limpeza de desafio órfão quando a partida termina antes)", () => {
+  const clock = fakeClock();
+  const scheduler = fakeScheduler();
+  const challenges = createArenaChallenges({
+    now: clock.now,
+    random: seeded(8),
+    setTimeoutFn: scheduler.setTimeoutFn,
+    clearTimeoutFn: scheduler.clearTimeoutFn,
+  });
+  const issued = issueUntil(challenges, "reflex");
+  assert.equal(scheduler.pendingCount(), 1);
+  challenges.discard(issued.challengeId);
+  assert.equal(scheduler.pendingCount(), 0, "descartar um reflexo pendente também cancela o timer do go");
+  assert.equal(challenges.submit(issued.challengeId, { tapped: true }), null, "não dá pra responder um desafio já descartado");
+});
+
 test("stop() cancela todos os timers pendentes", () => {
   const clock = fakeClock();
   const scheduler = fakeScheduler();
