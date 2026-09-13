@@ -2,21 +2,42 @@ import React, { useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import Pressy from "../components/Pressy";
 import { palette, radius } from "../theme";
-import { ArenaChallenge } from "./challenges";
+import { ArenaChallenge, PublicArenaChallenge } from "./challenges";
 
-type Tapped = { index: number; correct: boolean } | { reflex: true; correct: boolean };
+type SubmitPayload = { index: number } | { tapped: true };
+// `correct: null` = já respondeu, esperando o veredito chegar (só existe no
+// modo online — offline sempre sabe na hora, porque o gabarito está aqui).
+type Tapped =
+  | { index: number; correct: boolean | null }
+  | { reflex: true; correct: boolean | null };
 
 // Componente "burro" de propósito: só mede o tempo de resposta e devolve
 // (correto, ms) pra quem chama — a lógica de combo/invocação de tropa mora
 // em ArenaScreen, junto do resto do estado da partida (engine.ArenaState já
 // tem o combo, não faz sentido duplicar aqui).
+//
+// Dois modos, escolhidos pela presença de `onSubmit`:
+// - offline (onAnswer): o gabarito está no próprio `challenge`, o painel se
+//   autocorrige na hora — igual sempre foi.
+// - online/PvP (onSubmit + verdict): `challenge` não tem gabarito nem
+//   waitMs do reflexo (anti-trapaça, ver server/arena-challenges.mjs) — o
+//   painel só manda a resposta e espera o `verdict` chegar de fora (via
+//   prop, sem remontar) pra saber se acertou; o "vai!" do reflexo também
+//   vem de fora (`reflexGo`), nunca de um timer local.
 export default function ChallengePanel({
   challenge,
   onAnswer,
+  onSubmit,
+  verdict,
+  reflexGo,
 }: {
-  challenge: ArenaChallenge;
-  onAnswer: (correct: boolean, elapsedMs: number) => void;
+  challenge: ArenaChallenge | PublicArenaChallenge;
+  onAnswer?: (correct: boolean, elapsedMs: number) => void;
+  onSubmit?: (payload: SubmitPayload, elapsedMs: number) => void;
+  verdict?: { correct: boolean } | null;
+  reflexGo?: boolean;
 }) {
+  const online = !!onSubmit;
   const [tapped, setTapped] = useState<Tapped | null>(null);
   const [reflexPhase, setReflexPhase] = useState<"waiting" | "go">("waiting");
   const shownAt = useRef(performance.now());
@@ -27,42 +48,80 @@ export default function ChallengePanel({
     shownAt.current = performance.now();
     if (challenge.kind === "reflex") {
       setReflexPhase("waiting");
-      waitTimer.current = setTimeout(() => {
-        goAt.current = performance.now();
-        setReflexPhase("go");
-      }, challenge.waitMs);
+      // Offline sabe o waitMs de antemão e agenda localmente; online nunca
+      // recebe esse valor (ver comentário em server/arena-challenges.mjs) —
+      // quem avisa o momento certo é o `reflexGo` vindo de fora.
+      if (!online && "waitMs" in challenge) {
+        waitTimer.current = setTimeout(() => {
+          goAt.current = performance.now();
+          setReflexPhase("go");
+        }, challenge.waitMs);
+      }
     }
     return () => {
       if (waitTimer.current) clearTimeout(waitTimer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // o componente é remontado a cada novo desafio (key em ArenaScreen)
+  }, []); // o componente é remontado a cada novo desafio (key em quem chama)
+
+  // Atualiza o veredito de uma resposta já enviada, sem remontar (o mesmo
+  // desafio continua na tela até o próximo chegar).
+  useEffect(() => {
+    if (!verdict) return;
+    setTapped((prev) => (prev ? { ...prev, correct: verdict.correct } : prev));
+  }, [verdict]);
+
+  // "Vai!" chegando do servidor (WebSocket) em vez de um timer local.
+  useEffect(() => {
+    if (online && reflexGo && reflexPhase === "waiting") {
+      goAt.current = performance.now();
+      setReflexPhase("go");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reflexGo]);
 
   const answerChoice = (index: number) => {
-    if (tapped || challenge.kind !== "choice") return;
+    if (tapped) return;
+    const elapsedMs = performance.now() - shownAt.current;
+    if (online) {
+      setTapped({ index, correct: null });
+      onSubmit!({ index }, elapsedMs);
+      return;
+    }
+    if (challenge.kind !== "choice" || !("answerIndex" in challenge)) return;
     const correct = index === challenge.answerIndex;
     setTapped({ index, correct });
-    onAnswer(correct, performance.now() - shownAt.current);
+    onAnswer!(correct, elapsedMs);
   };
 
   const answerReflex = () => {
     if (tapped || challenge.kind !== "reflex") return;
+    if (online) {
+      const elapsedMs = reflexPhase === "go" ? performance.now() - goAt.current : 0;
+      setTapped({ reflex: true, correct: null });
+      onSubmit!({ tapped: true }, elapsedMs);
+      return;
+    }
     if (reflexPhase === "waiting") {
       setTapped({ reflex: true, correct: false });
-      onAnswer(false, 0);
+      onAnswer!(false, 0);
     } else {
       setTapped({ reflex: true, correct: true });
-      onAnswer(true, performance.now() - goAt.current);
+      onAnswer!(true, performance.now() - goAt.current);
     }
   };
 
+  const tone = (correct: boolean | null | undefined) =>
+    correct === true ? palette.green : correct === false ? palette.red : "#8A7FF5"; // pendente: nem acerto nem erro
+
   if (challenge.kind === "reflex") {
     const label = reflexPhase === "go" ? "TOQUE!" : "ESPERE…";
+    const pending = tapped && "correct" in tapped && tapped.correct === null;
     return (
       <View style={s.panel}>
         <Pressy
           disabled={!!tapped}
-          accessibilityLabel={label}
+          accessibilityLabel={pending ? `${label} (respondido, aguardando resultado)` : label}
           onPress={answerReflex}
           outerStyle={s.reflexButton}
           style={[
@@ -70,9 +129,7 @@ export default function ChallengePanel({
             {
               backgroundColor:
                 tapped && "correct" in tapped
-                  ? tapped.correct
-                    ? palette.green
-                    : palette.red
+                  ? tone(tapped.correct)
                   : reflexPhase === "go"
                     ? palette.green
                     : "#5B4FE8",
@@ -95,19 +152,20 @@ export default function ChallengePanel({
       <View style={s.options}>
         {challenge.options.map((opt, i) => {
           const isTapped = tapped && "index" in tapped && tapped.index === i;
+          const pending = isTapped && tapped!.correct === null;
           return (
             <Pressy
               key={i}
               disabled={!!tapped}
-              accessibilityLabel={`Opção ${i + 1}: ${opt}`}
+              accessibilityLabel={
+                pending ? `Opção ${i + 1}: ${opt} (respondida, aguardando resultado)` : `Opção ${i + 1}: ${opt}`
+              }
               onPress={() => answerChoice(i)}
               outerStyle={s.option}
               style={[
                 s.optionInner,
                 challenge.optionColors ? { backgroundColor: challenge.optionColors[i] } : null,
-                isTapped && "correct" in tapped!
-                  ? { backgroundColor: tapped!.correct ? palette.green : palette.red }
-                  : null,
+                isTapped ? { backgroundColor: tone(tapped!.correct) } : null,
               ]}
             >
               <Text style={s.optionText}>{opt}</Text>

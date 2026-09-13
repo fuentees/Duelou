@@ -27,6 +27,15 @@ export type ReflexChallenge = {
 };
 export type ArenaChallenge = ChoiceChallenge | ReflexChallenge;
 
+// Formato que server/arena-challenges.mjs manda pro cliente no PvP online:
+// mesma cara, sem o gabarito nem o waitMs do reflexo (anti-trapaça — ver o
+// comentário desse arquivo no servidor). ChallengePanel aceita os dois
+// formatos (ArenaChallenge | PublicArenaChallenge), escolhendo o modo pela
+// presença de `onSubmit`.
+export type PublicChoiceChallenge = Omit<ChoiceChallenge, "answerIndex">;
+export type PublicReflexChallenge = Omit<ReflexChallenge, "waitMs">;
+export type PublicArenaChallenge = PublicChoiceChallenge | PublicReflexChallenge;
+
 // Só entram na rotação os modos rápidos de resolver — a Arena precisa de
 // respostas em ~1-2s pra manter o ritmo do combate; "menor ou maior" e
 // "sequência lógica" pedem mais leitura e ficariam fora de compasso.
