@@ -1,7 +1,10 @@
+import useReducedMotion from "./useReducedMotion";
 import React, { useEffect, useRef, useState } from "react";
 import {
-  AppState,
+  BackHandler,
+  Linking,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   Share,
@@ -11,31 +14,18 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { api, restore, remember, forget } from "./api";
+import HomeScreen from "./HomeScreen";
+import MenuScreen from "./MenuScreen";
+import AudioSettingsScreen from "./AudioSettingsScreen";
 import Arcade from "./arcade/ArcadeScreen";
 import { gradients } from "./theme";
 import Button from "./components/Button";
-import AnimatedNumber from "./components/AnimatedNumber";
-import { catalog, title, Game } from "./live/catalog";
+import BottomNav, { Section } from "./components/BottomNav";
+import AppHeader from "./components/AppHeader";
 import AuthScreen from "./live/AuthScreen";
-import GameRound from "./live/GameRound";
-import TreinoTab from "./live/TreinoTab";
-import DuelosTab from "./live/DuelosTab";
 import RankingTab from "./live/RankingTab";
 import PerfilTab from "./live/PerfilTab";
 import { s } from "./live/styles";
-
-type Config = {
-  game: Game;
-  difficulty: number;
-  targetMs: number;
-  toleranceMs: number;
-  hideAfterMs: number | null;
-  waitMs: number;
-  waits?: number[];
-  sequence: number[];
-  flashMs: number;
-};
-type Match = { id: string; config: Config; expires: number };
 type Profile = {
   id: string;
   name: string;
@@ -54,78 +44,49 @@ type Profile = {
     unlocked: boolean;
   }[];
 };
-type Daily = {
-  key: string;
-  config: Config;
-  completed: boolean;
-  score: number | null;
-  resetsAt: number;
-};
+
 const err = (e: unknown) =>
   e instanceof Error ? e.message : "Algo deu errado.";
-
 export default function LiveApp() {
-  const [arcadeOpen, setArcadeOpen] = useState(true);
-  const [returnToArcade, setReturnToArcade] = useState(false);
+  const reducedMotion = useReducedMotion();
+  const [inviteCode, setInviteCode] = useState("");
+  useEffect(() => {
+    const receive = (url: string | null) => {
+      const match = url?.match(
+        /(?:[?&]room=|duelou:\/\/room\/)([A-Fa-f0-9]{8})(?:$|[&#/])/,
+      );
+      if (match) {
+        setInviteCode(match[1].toUpperCase());
+        setSection("arcade");
+      }
+    };
+    Linking.getInitialURL()
+      .then(receive)
+      .catch(() => {});
+    const sub = Linking.addEventListener("url", (e) => receive(e.url));
+    return () => sub.remove();
+  }, []);
+  const [section, setSection] = useState<Section>("home");
   const [profile, setProfile] = useState<Profile | null>(null),
     [boot, setBoot] = useState(true),
-    [newRecoveryCode, setNewRecoveryCode] = useState(""),
-    [tab, setTab] = useState("Duelos"),
-    [connected, setConnected] = useState(false),
-    [difficulty, setDifficulty] = useState(1),
-    [match, setMatch] = useState<Match | null>(null),
-    [result, setResult] = useState<any>(null),
-    [pending, setPending] = useState<object | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
-    [code, setCode] = useState(""),
-    [duels, setDuels] = useState<any[]>([]),
     [ranking, setRanking] = useState<any[]>([]),
     [history, setHistory] = useState<any[]>([]),
-    [daily, setDaily] = useState<Daily | null>(null),
+    [newRecoveryCode, setNewRecoveryCode] = useState(""),
+    [returnToArcade, setReturnToArcade] = useState(false),
     [deleting, setDeleting] = useState(false),
     [suggestRecovery, setSuggestRecovery] = useState(false);
   const lock = useRef(false);
-  useEffect(() => {
-    if (!profile || arcadeOpen) return;
-    let stopped = false;
-    let timer: ReturnType<typeof setTimeout>;
-    const sync = async () => {
-      if (AppState.currentState === "background") {
-        timer = setTimeout(sync, 5000);
-        return;
-      }
-      try {
-        await api("/v1/presence", {});
-        const rooms = await api<any[]>("/v1/duels");
-        if (!stopped) {
-          setDuels(rooms);
-          setConnected(true);
-        }
-      } catch {
-        if (!stopped) setConnected(false);
-      }
-      if (!stopped) timer = setTimeout(sync, 5000);
-    };
-    sync();
-    return () => {
-      stopped = true;
-      clearTimeout(timer);
-    };
-  }, [profile?.id, arcadeOpen]);
   const refresh = async () => {
-    const [p, d, r, h, today] = await Promise.all([
+    const [p, r, h] = await Promise.all([
       api<Profile>("/v1/me"),
-      api("/v1/duels"),
-      api("/v1/leaderboard"),
+      api("/v1/rooms/leaderboard"),
       api("/v1/history"),
-      api<Daily>("/v1/daily"),
     ]);
     setProfile(p);
-    setDuels(d);
     setRanking(r);
     setHistory(h);
-    setDaily(today);
   };
   const action = async (fn: () => Promise<void>) => {
     if (lock.current) return;
@@ -152,48 +113,49 @@ export default function LiveApp() {
       }
     })();
   }, []);
-  const play = async (game: Game, duelCode?: string) =>
-    action(async () => {
-      const m = await api<Match>(
-        "/v1/matches",
-        duelCode ? { code: duelCode } : { game, difficulty },
-      );
-      setResult(null);
-      setPending(null);
-      setMatch(m);
+  // Sem isso, o botão físico de voltar do Android fecha o app inteiro em
+  // qualquer tela — não existe biblioteca de navegação aqui, é tudo estado
+  // React. "Início" é a raiz: só aí o voltar sai do app de verdade (padrão
+  // Android). Nas outras seções, a Arena/BrowseView trata seu próprio
+  // "← Voltar" primeiro (ver ArcadeScreen.tsx); só chega aqui quando ela
+  // devolve o controle (já está na tela-raiz dela também).
+  useEffect(() => {
+    // react-native-web não implementa isso (e loga erro se chamado) — só faz
+    // sentido em app nativo de verdade, não na prévia web.
+    if (Platform.OS === "web") return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (section === "home") return false;
+      setSection("home");
+      return true;
     });
-  const playDaily = async () =>
-    action(async () => {
-      const m = await api<Match>("/v1/matches", { daily: true });
-      setResult(null);
-      setPending(null);
-      setMatch(m);
-    });
-  const finish = async (data: object) => {
-    setPending(data);
-    await action(async () => {
-      const r = await api("/v1/matches/" + match!.id + "/finish", data);
-      setResult(r);
-      setProfile(r.profile);
-      setPending(null);
-    });
-  };
-  const create = async (game: Game) =>
-    action(async () => {
-      const d = await api("/v1/duels", { game, difficulty });
-      setCode(d.code);
-      await refresh();
-      await Share.share({
-        message:
-          "Duelou! " +
-          title(game) +
-          " · dificuldade " +
-          difficulty +
-          ". Meu código é " +
-          d.code +
-          ". Entre em Online no app. Válido por 24h.",
-      });
-    });
+    return () => sub.remove();
+  }, [section]);
+  useEffect(() => {
+    if (!profile || !["ranking", "profile", "home"].includes(section)) return;
+    let alive = true;
+    const sync = async () => {
+      try {
+        const [p, r, h] = await Promise.all([
+          api<Profile>("/v1/me"),
+          api("/v1/rooms/leaderboard"),
+          api("/v1/history"),
+        ]);
+        if (alive) {
+          setProfile(p);
+          setRanking(r);
+          setHistory(h);
+        }
+      } catch (e) {
+        if (alive) setError(err(e));
+      }
+    };
+    sync();
+    const timer = setInterval(sync, 10000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [profile?.id, section]);
   const handleCreateAccount = (name: string) =>
     action(async () => {
       const r = await api("/v1/guests", { name });
@@ -208,160 +170,109 @@ export default function LiveApp() {
       await refresh();
       if (returnToArcade) {
         setReturnToArcade(false);
-        setArcadeOpen(true);
+        setSection("arcade");
       }
-    });
-  const handleJoinDuel = () =>
-    action(async () => {
-      const d = await api("/v1/duels/join", { code });
-      await refresh();
-      setCode(d.code);
     });
   const handleSignOut = () =>
     action(async () => {
       await api("/v1/session", undefined, "DELETE");
       await forget();
       setProfile(null);
+      setRanking([]);
+      setHistory([]);
       setSuggestRecovery(true);
-      setTab("Jogar");
     });
   const handleDeleteAccount = () =>
     action(async () => {
       await api("/v1/me", undefined, "DELETE");
       await forget();
       setProfile(null);
+      setRanking([]);
+      setHistory([]);
       setDeleting(false);
       setSuggestRecovery(false);
-      setTab("Jogar");
     });
-  if (boot)
-    return (
-      <SafeAreaView style={s.screen}>
-        <Text style={s.heading}>Carregando seu progresso…</Text>
-      </SafeAreaView>
-    );
-  if (arcadeOpen)
-    return (
-      <Arcade
-        player={profile}
-        onBack={() => setArcadeOpen(false)}
-        onLogin={() => {
-          setReturnToArcade(true);
-          setArcadeOpen(false);
-        }}
-      />
-    );
-  return (
+  // O modal de recuperação fica acima de todos os destinos, até a confirmação.
+  const content = boot ? (
     <SafeAreaView style={s.screen}>
-      <LinearGradient
-        colors={gradients.hero}
-        style={s.top}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-      >
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Abrir novas salas e offline"
-          onPress={() => setArcadeOpen(true)}
-        >
-          <Text style={s.brand}>duelou.</Text>
-        </Pressable>
-        {profile && (
-          <View style={s.row}>
-            <Text style={s.headerLabel}>
-              NÍVEL {profile.level} · {profile.coins} MOEDAS
-            </Text>
-          </View>
-        )}
-      </LinearGradient>
+      <Text style={s.heading}>Carregando seu progresso…</Text>
+    </SafeAreaView>
+  ) : section === "home" ? (
+    <HomeScreen player={profile} onNavigate={setSection} />
+  ) : section === "menu" ? (
+    <MenuScreen onNavigate={setSection} />
+  ) : section === "audio" ? (
+    <AudioSettingsScreen onNavigate={setSection} />
+  ) : section === "arcade" ? (
+    <Arcade
+      inviteCode={inviteCode}
+      onInviteConsumed={() => setInviteCode("")}
+      player={profile}
+      onNavigate={setSection}
+      onLogin={() => {
+        setReturnToArcade(true);
+        setSection("profile");
+      }}
+    />
+  ) : (
+    <SafeAreaView style={s.screen}>
+      <AppHeader status={profile?.name || "SUA CONTA"} />
       {!profile ? (
         <AuthScreen
           busy={busy}
           error={error}
           defaultRecoveryOpen={suggestRecovery}
           onCreate={handleCreateAccount}
-          onRecover={(code) => handleRecover(code)}
+          onRecover={handleRecover}
         />
       ) : (
-        <>
-          <ScrollView contentContainerStyle={s.content}>
-            <View style={s.between}>
-              <Text style={s.heading}>
-                {tab === "Jogar"
-                  ? "Treino"
-                  : tab === "Duelos"
-                    ? "Jogue com amigos"
-                    : tab}
+        <ScrollView contentContainerStyle={s.content}>
+          <View style={s.between}>
+            <Text style={s.heading}>
+              {section === "ranking" ? "Ranking da Arena" : "Perfil"}
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              style={{ minWidth: 44, minHeight: 44, justifyContent: "center" }}
+              accessibilityState={{ disabled: busy }}
+              disabled={busy}
+              onPress={() => action(refresh)}
+            >
+              <Text style={s.accent}>
+                {busy ? "Atualizando…" : "Atualizar"}
               </Text>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => action(refresh)}
-              >
-                <Text style={s.accent}>{busy ? "…" : "Atualizar"}</Text>
-              </Pressable>
-            </View>
-            {!!error && (
-              <Text accessibilityRole="alert" style={s.error}>
-                {error}
-              </Text>
-            )}
-            {tab === "Jogar" ? (
-              <TreinoTab
-                profile={profile}
-                daily={daily}
-                difficulty={difficulty}
-                setDifficulty={setDifficulty}
-                busy={busy}
-                onPlay={(game) => play(game)}
-                onPlayDaily={playDaily}
-              />
-            ) : tab === "Duelos" ? (
-              <DuelosTab
-                connected={connected}
-                code={code}
-                setCode={setCode}
-                difficulty={difficulty}
-                setDifficulty={setDifficulty}
-                duels={duels}
-                profileId={profile.id}
-                busy={busy}
-                onJoinDuel={handleJoinDuel}
-                onCreateDuel={create}
-                onPlayDuel={play}
-                onError={setError}
-              />
-            ) : tab === "Ranking" ? (
-              <RankingTab ranking={ranking} profileId={profile.id} />
-            ) : (
-              <PerfilTab
-                profile={profile}
-                history={history}
-                busy={busy}
-                deleting={deleting}
-                setDeleting={setDeleting}
-                onSignOut={handleSignOut}
-                onDeleteAccount={handleDeleteAccount}
-              />
-            )}
-          </ScrollView>
-          <View style={s.nav}>
-            {["Jogar", "Duelos", "Ranking", "Perfil"].map((t) => (
-              <Pressable
-                key={t}
-                accessibilityRole="button"
-                onPress={() => setTab(t)}
-              >
-                <Text style={tab === t ? s.accent : s.muted}>
-                  {t === "Jogar" ? "Treino" : t === "Duelos" ? "Online" : t}
-                </Text>
-              </Pressable>
-            ))}
+            </Pressable>
           </View>
-        </>
+          {!!error && (
+            <Text accessibilityRole="alert" style={s.error}>
+              {error}
+            </Text>
+          )}
+          {section === "ranking" ? (
+            <RankingTab ranking={ranking} profileId={profile.id} />
+          ) : (
+            <PerfilTab
+              profile={profile}
+              onProfileUpdated={setProfile}
+              history={history}
+              busy={busy}
+              deleting={deleting}
+              setDeleting={setDeleting}
+              onSignOut={handleSignOut}
+              onDeleteAccount={handleDeleteAccount}
+            />
+          )}
+        </ScrollView>
       )}
+      <BottomNav section={section} onChange={setSection} />
+    </SafeAreaView>
+  );
+  return (
+    <>
+      {content}
       <Modal
         visible={!!newRecoveryCode}
-        animationType="fade"
+        animationType={reducedMotion ? "none" : "fade"}
         transparent
         onRequestClose={() => undefined}
       >
@@ -391,7 +302,7 @@ export default function LiveApp() {
                 setNewRecoveryCode("");
                 if (returnToArcade) {
                   setReturnToArcade(false);
-                  setArcadeOpen(true);
+                  setSection("arcade");
                 }
               }}
             >
@@ -400,63 +311,6 @@ export default function LiveApp() {
           </LinearGradient>
         </View>
       </Modal>
-      <Modal
-        visible={!!match}
-        animationType="slide"
-        onRequestClose={() => {
-          if (!busy) setMatch(null);
-        }}
-      >
-        <SafeAreaView style={s.screen}>
-          <LinearGradient
-            colors={gradients.hero}
-            style={s.top}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          >
-            <Text style={s.brand}>DUELOU</Text>
-            <Pressable
-              disabled={busy}
-              onPress={() => {
-                setMatch(null);
-                action(refresh);
-              }}
-            >
-              <Text style={s.headerAccent}>Fechar</Text>
-            </Pressable>
-          </LinearGradient>
-          {match &&
-            (result ? (
-              <View style={s.round}>
-                <Text style={s.label}>RESULTADO SALVO</Text>
-                <AnimatedNumber value={result.score} style={s.big} />
-                <Text style={s.heading}>
-                  +{result.xp} XP · +{result.coins} moedas
-                </Text>
-                <Button
-                  onPress={() => {
-                    setMatch(null);
-                    action(refresh);
-                  }}
-                >
-                  Continuar
-                </Button>
-              </View>
-            ) : pending ? (
-              <View style={s.round}>
-                <Text style={s.heading}>
-                  {busy ? "Salvando resultado…" : "Resultado ainda não salvo"}
-                </Text>
-                {!!error && <Text style={s.error}>{error}</Text>}
-                <Button disabled={busy} onPress={() => finish(pending)}>
-                  Tentar salvar novamente
-                </Button>
-              </View>
-            ) : (
-              <GameRound key={match.id} match={match} finish={finish} />
-            ))}
-        </SafeAreaView>
-      </Modal>
-    </SafeAreaView>
+    </>
   );
 }

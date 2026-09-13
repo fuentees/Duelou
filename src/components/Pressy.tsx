@@ -1,5 +1,8 @@
-import React, { useRef } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import { Animated, Pressable } from "react-native";
+import useReducedMotion from "../useReducedMotion";
+import { palette } from "../theme";
+import { ensureMusicPlaying, playTap } from "../audio/sounds";
 
 // Wraps any pressable content with a subtle press-scale animation.
 // `outerStyle` lands on the actual Pressable (the flex item) so percentage-based
@@ -24,24 +27,48 @@ export default function Pressy({
   accessibilityLabel?: string;
   accessibilityState?: any;
 }) {
+  const reducedMotion = useReducedMotion();
+  const [focused, setFocused] = useState(false);
   const scale = useRef(new Animated.Value(1)).current;
-  const animate = (to: number) =>
+  useEffect(() => {
+    if (reducedMotion) {
+      scale.stopAnimation();
+      scale.setValue(1);
+    }
+  }, [reducedMotion]);
+  const animate = (to: number) => {
+    if (reducedMotion) return;
     Animated.spring(scale, {
       toValue: to,
       useNativeDriver: true,
       speed: 40,
       bounciness: 6,
     }).start();
+  };
   return (
     <Pressable
       accessibilityRole={accessibilityRole}
       accessibilityLabel={accessibilityLabel}
-      accessibilityState={accessibilityState}
+      accessibilityState={{ ...accessibilityState, disabled: !!disabled }}
       disabled={disabled}
-      onPress={onPress}
+      onPress={() => {
+        playTap();
+        ensureMusicPlaying();
+        onPress();
+      }}
       onPressIn={() => !disabled && animate(0.96)}
       onPressOut={() => animate(1)}
-      style={outerStyle}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      style={[
+        { minWidth: 44, minHeight: 44 },
+        outerStyle,
+        focused && {
+          outlineWidth: 3,
+          outlineColor: palette.violet,
+          outlineOffset: 2,
+        },
+      ]}
     >
       <Animated.View style={[style, { transform: [{ scale }] }]}>
         {children}

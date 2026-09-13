@@ -1,99 +1,60 @@
-# Executar e operar a release candidate
+# Executar e operar o Duelou
 
-## Requisitos
-
-Node 22.13 ou superior. A API usa node:sqlite com a flag --experimental-sqlite. Esta máquina tem Node 22.12 e executou os testes, mas fica abaixo do requisito formal do Metro atual.
-O projeto usa Expo SDK 57, React Native 0.86 e target Android API 36. Usar development build ou Expo Go compatível com o SDK 57.
-Não há serviço externo provisionado, assinatura, cobrança ou publicação automática.
+Estado do repositório em 13/09/2026. Esta revisão não publicou alterações nem verificou o estado atual do servidor externo.
 
 ## Desenvolvimento
 
-Use uma pasta Windows com nome válido, por exemplo duelou-app. Evite a pasta reservada con na execução.
+Node 22.13+ e npm. Execute `npm ci`, `npm run api` e, em outro terminal, `npm run web:8083`. API local: http://127.0.0.1:3001. Web: http://localhost:8083. Banco padrão: `data/duelou.sqlite`.
 
-1. npm ci
-2. npm run api
-3. Em outro terminal: npm run web:8083
-4. Abra http://localhost:8083
+`HOST=0.0.0.0` permite acesso pela LAN; o cliente precisa de `EXPO_PUBLIC_API_URL` com o endereço alcançável. `ALLOWED_ORIGINS` aceita origens web exatas, separadas por vírgulas. Não coloque segredos em variáveis EXPO_PUBLIC.
 
-API padrão: http://127.0.0.1:3001; banco data/duelou.sqlite.
-O processo começa restrito à máquina local. Para piloto na LAN, definir HOST=0.0.0.0 explicitamente.
-No PowerShell da API:
+## API e persistência
 
-```powershell
-$env:HOST='0.0.0.0'
-npm run api
-```
+- POST /v1/guests cria conta e código de recuperação; POST /v1/sessions/recover troca a sessão.
+- GET /v1/me fornece perfil; DELETE /v1/session sai; DELETE /v1/me exclui a conta.
+- GET /v1/history retorna 30 provas detalhadas; `?before=cursor` busca a página anterior. O histórico individual permanece após a limpeza de salas, enquanto a conta existir.
+- GET/POST /v1/campaign/:mode consulta/une progresso solo da conta autenticada. A sincronização é opcional e não concede XP, moedas ou classificação.
+- /v1/rooms contém salas casuais, continuação, revanche, fila competitiva, rodadas, presença e classificação. Competitivo e casual têm regras separadas.
+- GET /health consulta o banco e retorna disponibilidade e estado resumido do backup; falha de banco retorna 503. Não expõe caminhos, chaves, nomes nem respostas.
 
-No PowerShell do aplicativo:
+SQLite opera em uma instância. Configurações do Docker copiam os módulos de servidor e regras compartilhadas. Não há Docker disponível neste ambiente de validação; testar a imagem antes de publicar. A migração preserva campanhas e histórico. Não recrie o banco para atualizar versões.
 
-```powershell
-$env:EXPO_PUBLIC_API_URL='http://IP_DO_COMPUTADOR:3001'
-npx expo start --lan
-```
+## Limites e diagnóstico
 
-O celular precisa alcançar tanto a porta Expo quanto a API (3001).
-Túnel Expo não publica a API automaticamente. HTTP serve somente ao desenvolvimento de confiança; produção exige HTTPS.
-A falha anterior de conexão não demonstrou que o firewall era a causa. Gateway, isolamento da rede, regra de firewall e compatibilidade do Expo Go ainda precisam ser verificados.
-EXPO_PUBLIC_API_URL é configuração pública, nunca lugar de credenciais.
-Para web em outro domínio, configurar ALLOWED_ORIGINS com lista de origens exatas separadas por vírgula.
+Cada conta autenticada dispõe de 240 requisições por minuto. Contas na mesma rede não dividem essa cota. Criação/recuperação têm 15 solicitações por rota/IP/minuto; requisições anônimas têm 60 e healthcheck 120. Respostas 429 incluem Retry-After. A chave da conta é obtida por autenticação, não pelo texto do token. Cabeçalhos Forwarded/X-Forwarded-For são ignorados; nunca habilite confiança irrestrita nesses cabeçalhos.
 
-## API
+Os limites ficam na memória, com número máximo de chaves. São adequados à instância única atual; antes de escalar horizontalmente, mover limites e persistência para serviços compartilhados. Tentativas anônimas atrás de um proxy ainda compartilham sua cota; mapear proxies confiáveis antes de uma abertura pública de grande escala.
 
-POST /v1/guests {name} → token, recoveryCode, profile. O código é exibido uma única vez.
-POST /v1/sessions/recover {code} → novo token, profile; revoga a sessão anterior.
-Demais rotas exigem Authorization: Bearer TOKEN.
-GET /v1/me, /v1/games, /v1/history, /v1/leaderboard, /v1/duels.
-GET /v1/daily → configuração diária e estado da tentativa.
-POST /v1/duels {game,difficulty} → code.
-POST /v1/duels/join {code} → vaga atribuída.
-POST /v1/matches {game,difficulty}, {code} ou {daily:true} → id/config.
-POST /v1/matches/:id/finish → {elapsedMs}, {reactionMs}, {falseStart:true} ou {answers:[...]}.
-DELETE /v1/session → revoga a sessão atual sem apagar o jogador.
-DELETE /v1/me → exclusão permanente.
-GET /health e /v1/health são públicos.
+A API emite `api_window` a cada minuto com contagens agregadas de solicitações, erros 5xx, limites 429 e respostas acima de 1 segundo. Erros inesperados emitem `request_failed`, sem imprimir a requisição. Não registrar tokens, recuperação, nomes ou respostas em logs.
 
-## Banco, sessão e recuperação
+## Backup automático e restauração
 
-Dados do jogador permanecem em SQLite; não enviar o banco ao repositório ou ao ZIP.
-Para cópia fria: parar API, copiar diretório data inteiro e reiniciar. Para backup online, usar backup SQLite consistente, não copiar somente o arquivo principal enquanto WAL estiver ativo.
-Antes de lançar: automatizar backup criptografado, retenção e teste de restauração em ambiente isolado. RPO/RTO ainda não definidos com o negócio.
-Esquema atual versão 3, atualizado idempotentemente a partir da versão inicial. Evoluções exigem migration incremental, não apagar/recriar dados.
-Tokens e códigos de recuperação são persistidos somente como SHA-256. A sessão vence em 180 dias; recuperar a conta ou sair deste aparelho invalida o token anterior. O código de recuperação não expira na V1 e deve ser tratado como segredo.
+Configure `BACKUP_ENCRYPTION_KEY` no gerenciador de segredos do ambiente: 32 bytes em hexadecimal, guardados fora do banco e fora do repositório. Sem a chave, backups automáticos ficam explicitamente desativados. Se houver configuração parcial inválida, a API não inicia silenciosamente sem backup.
 
-## Limites conhecidos
+Com a chave configurada, a API executa um backup ao iniciar e a cada 360 minutos. `BACKUP_INTERVAL_MINUTES` aceita 5 a 10080. `BACKUP_KEEP` é 14 por padrão (1 a 365 cópias). `BACKUP_DIR` é `backups/` localmente e `/data/backups` no container. Ajustar capacidade do volume e retenção para o tamanho real da base.
 
-Web guarda token na sessionStorage, encerrado ao fechar a sessão; app nativo usa SecureStore.
-Medições e sequência são visíveis no cliente: servidor valida intervalos/formato/duração, mas não comprova habilidade humana.
-Sem rate limit distribuído; atrás de proxy, o limite por IP pode agrupar usuários.
-Sem cobrança, push, upload, gravação de vídeo, e-mail/senha ou ranking competitivo verificado.
-Sem confirmação em dispositivo físico nesta entrega.
-O audit após a atualização tem 10 alertas moderados transitivos no toolchain Expo, concentrados em uuid/xcode. A correção automática sugere downgrade incompatível do Expo e não foi aplicada; acompanhar correção upstream antes da submissão final.
+O worker separado evita bloquear as requisições enquanto faz VACUUM INTO, verificação SQLite e cifra AES-256-GCM. Não inicia outro backup enquanto um estiver em curso. Emite `backup_ok` ou `backup_failed`; novas execuções tentam recuperar falhas. A API continua disponível quando só o backup falha. O healthcheck inclui lastSuccess, lastAttempt, intervalo e estado do backup.
 
-## Backup e restauração do banco
+`npm run db:backup` executa uma cópia manual com as mesmas regras. `npm run db:restore -- arquivo.sqlite.enc destino-novo.sqlite` autentica a cifra, recusa sobrescrever arquivos existentes e verifica a integridade SQLite. Testes locais cobrem WAL ativo, chave errada, corrupção, retenção e destino existente. Os snapshots temporários têm permissões restritas e são removidos no encerramento normal, inclusive após erro; uma interrupção forçada do processo pode deixar um snapshot, que deve ser removido durante recuperação operacional.
 
-`npm run db:backup` gera uma cópia consistente do banco (via `VACUUM INTO`, seguro mesmo com WAL ativo) e cifra o arquivo com AES-256-GCM antes de gravar em `backups/`. Exige `BACKUP_ENCRYPTION_KEY` no ambiente (32 bytes em hex — gerar uma vez com `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` e guardar como segredo, nunca no repositório). `DB_PATH` e `BACKUP_DIR` são opcionais.
+O diretório de backup no mesmo volume protege contra erros lógicos, mas não contra perda do volume. Antes de produção, configurar cópia cifrada para armazenamento independente, guardar a chave com recuperação controlada e ensaiar restauração nesse ambiente. Esta revisão não acessou nem configurou contas de armazenamento externas.
 
-`npm run db:restore -- <arquivo.sqlite.enc> [destino]` decifra e grava o banco restaurado num arquivo separado; nunca sobrescreve o banco em uso diretamente. Testado localmente: roundtrip de backup/restauração preserva os dados e uma chave errada falha alto (erro de autenticação), não corrompe silenciosamente.
+O temporizador só executa enquanto a máquina estiver ligada. O fly.toml atual permite suspensão por ociosidade; para horários garantidos, usar máquina sempre ativa ou agendador externo. Não foi alterada essa política de custo ou disponibilidade.
 
-Pendente antes de produção: agendar a execução periódica (por exemplo um processo ou máquina agendada na Fly.io, ou GitHub Actions com acesso ao volume) e um ensaio de restauração num ambiente isolado de verdade, não só local.
+## Monitoramento
 
-## Deploy na Fly.io
+`npm run ops:check` consulta a API local. Configure `HEALTH_URL` para o ambiente desejado e `REQUIRE_BACKUP=true` para também exigir uma cópia recente (intervalo configurado + 5 minutos). Retorna JSON, código 0 em sucesso e código 1 em falha, timeout ou backup atrasado. Pode ser chamado a cada minuto por um monitor externo.
 
-`fly.toml` já está no repositório, apontando para `server/Dockerfile`. Passos, depois de `flyctl auth login`:
+Conectar código 1 e eventos backup_failed/request_failed ao canal operacional escolhido. Nenhuma mensagem, integração de alerta ou assinatura externa foi criada nesta revisão. O monitor deve funcionar fora da máquina da API para detectar perda total do host.
 
-1. Escolher um nome de app único e criar: `flyctl apps create <nome>` — depois trocar `app = "duelou-api-trocar"` no `fly.toml` pelo nome escolhido.
-2. Criar o volume persistente do banco: `flyctl volumes create duelou_data --region gru --size 1`.
-3. Ajustar `ALLOWED_ORIGINS` no `fly.toml` para a origem real do app web publicado (ou várias, separadas por vírgula).
-4. `flyctl deploy`.
-5. Testar: `curl https://<nome>.fly.dev/health` deve responder `{"ok":true,...}`.
-6. Apontar o app para a API publicada: `EXPO_PUBLIC_API_URL=https://<nome>.fly.dev` no ambiente de build/execução do Expo.
+## Métricas e piloto
 
-`min_machines_running = 0` deixa a máquina desligar quando ociosa (economiza no plano gratuito); a primeira requisição depois de um tempo parado pode demorar 1–2s a mais para acordar.
+`npm run metrics -- caminho/banco.sqlite` abre a base somente para leitura. Agrega sete dias de notas, empates, provas perfeitas, duração observada no servidor, fila, respostas e estados de término. `time_limit` não prova desistência: pode incluir rede ou dificuldade. `npm run integrity:report -- caminho/banco.sqlite` lista sinais para revisão humana, sem sanção automática.
 
-## Verificação
+Eventos, observações e sinais têm retenção operacional de 90 dias. O histórico da conta é permanente enquanto ela existir. Não há telemetria de campanha offline nem evidência de retenção de jogadores reais nesta entrega. Protocolo e formulário: [PILOTO-E-DISPOSITIVOS.md](PILOTO-E-DISPOSITIVOS.md).
 
-npm run test:api
-npm run typecheck
-npm run build:web
-Testes cobrem regras, autorização, recuperação, revogação, replay, desafio diário, dois jogadores, expiração de partida, exclusão e migração/reabertura do banco.
-A aprovação em web não substitui build nativo e testes de rede no celular.
+## Validação antes da publicação
+
+Executar `npm run typecheck`, `npm run test:api`, `npm run test:ui`, `npm run test:a11y`, `npm run test:resilience`, `npm run test:sync`, `npm run test:account`, `npm run test:md3`, `npm run test:container`, `npm run build:web` e `npm run check:bundle`.
+
+Depois: validar o container, rodar em Android/iOS físicos, ativar backup/monitoramento com segredos e destinos reais, testar restauração externa e publicar em staging antes da atualização de produção. Nenhum desses resultados externos é presumido a partir dos testes locais.

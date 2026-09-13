@@ -10,14 +10,14 @@ import {
   MAX_LEVEL,
 } from "../shared/arcade.mjs";
 test("provas: alternativas únicas, escada de níveis 1..MAX_LEVEL e pontuação", () => {
-  for (const mode of modes)
+  for (const mode of modes.filter(m=>!["timer","reflex","aim","memory"].includes(m.id)))
     for (const level of [1, 2, Math.round(MAX_LEVEL / 2), MAX_LEVEL])
       for (let n = 0; n < 15; n++) {
         const c = makeArcade(mode.id, level);
         assert.equal(c.difficulty, level);
         assert.equal(c.rounds.length, levelRules[level - 1].rounds);
         assert.equal(c.seconds, levelRules[level - 1].seconds);
-        assert.equal(c.rulesVersion, 4);
+        assert.equal(c.rulesVersion, 6);
         assert.equal(
           arcadeScore(
             c,
@@ -39,7 +39,7 @@ test("provas: alternativas únicas, escada de níveis 1..MAX_LEVEL e pontuação
   assert.equal(makeArcade("odd", MAX_LEVEL).rounds[0].options.length, 36);
   assert.equal(makeArcade("order", 1).rounds[0].options.length, 4);
   assert.equal(makeArcade("order", MAX_LEVEL).rounds[0].options.length, 8);
-  assert.match(makeArcade("math", MAX_LEVEL).rounds[0].prompt, /×/);
+  assert.ok(makeArcade("math", MAX_LEVEL).rounds.every(r=>r.options.length===4));
   assert.match(makeArcade("sequence", 1).rounds[0].prompt, /\?/);
   assert.ok(
     makeArcade("colors", 2).rounds.every(
@@ -64,6 +64,26 @@ test("provas: alternativas únicas, escada de níveis 1..MAX_LEVEL e pontuação
       .filter((g) => g !== null),
   );
   assert.ok(gaps.size > 1, "as diferenças entre opções não podem ser todas iguais");
+  // "Qual é o menor?" não pode ser sempre a mesma pergunta — perguntar o maior
+  // às vezes é o que torna o modo mais que "decorar onde clicar".
+  const orderPrompts = new Set(
+    makeArcade("order", MAX_LEVEL, fauxRandom).rounds.map((r) => r.prompt),
+  );
+  assert.equal(orderPrompts.size, 2, "deve alternar entre menor e maior");
+  // Acertar em sequência vale mais que acertar o mesmo total espalhado — sem
+  // isso, "sorte espalhada" pontua igual a "domínio sustentado".
+  const c = makeArcade("math", 5, fauxRandom);
+  const right = c.rounds.map((r) => r.answer);
+  const wrong = c.rounds.map((r) => (r.answer + 1) % r.options.length);
+  const half = c.rounds.length;
+  const streakAnswers = right
+    .slice(0, Math.floor(half / 2))
+    .concat(wrong.slice(Math.floor(half / 2)));
+  const scatteredAnswers = right.map((v, i) => (i % 2 === 0 ? v : wrong[i]));
+  assert.ok(
+    arcadeScore(c, streakAnswers) > arcadeScore(c, scatteredAnswers),
+    "acertos em sequência devem valer mais que o mesmo total espalhado",
+  );
 });
 test("salas: descoberta, sorteio por nível, grupo, largada, placar, replay e saída", async () => {
   let now = Date.now();
@@ -153,27 +173,58 @@ test("salas: descoberta, sorteio por nível, grupo, largada, placar, replay e sa
     await call("/v1/rooms/" + r.code + "/finish", c.token, { answers: [] });
     const finalRoom = (await call("/v1/rooms/" + r.code, a.token)).data;
     assert.equal(finalRoom.state, "finished");
-    assert.equal(finalRoom.members[0].id, a.profile.id);
-    assert.ok(
-      finalRoom.members[0].durationMs < finalRoom.members[1].durationMs,
-    );
+    assert.ok(finalRoom.members.every(m=>m.seriesWins===0));
+    assert.equal(finalRoom.history[0].winner,null);
+    assert.ok(finalRoom.members.find(m=>m.id===a.profile.id).durationMs < finalRoom.members.find(m=>m.id===b.profile.id).durationMs);
     // 'a' venceu com 1.000 pontos no nível 1 (seu nível atual): sobe pro nível 2.
     assert.deepEqual((await call("/v1/rooms/stats", a.token)).data, {
       played: 1,
-      wins: 1,
+      wins: 0,
       best: 1000,
       average: 1000,
       level: 2,
       maxLevel: MAX_LEVEL,
     });
     const leaders = (await call("/v1/rooms/leaderboard", a.token)).data;
-    assert.equal(leaders[0].id, a.profile.id);
-    assert.equal(leaders[0].wins, 1);
-    // A próxima sala de 'a' já nasce no nível novo.
+    assert.deepEqual(leaders, [], "salas casuais não entram no ranking");
+    // Revanche: primeiro clique cria a sala nova e aponta a antiga pra ela —
+    // quem ainda está na sala antiga descobre pelo próprio view() (nextCode).
+    const rematchByA = (
+      await call("/v1/rooms/" + r.code + "/rematch", a.token, {})
+    ).data;
+    assert.notEqual(rematchByA.code, r.code);
+    assert.equal(rematchByA.host, a.profile.id);
+    const oldRoomForB = (await call("/v1/rooms/" + r.code, b.token)).data;
+    assert.equal(oldRoomForB.nextCode, rematchByA.code);
+    // 'b' aceita: entra na mesma sala que 'a' criou (reaproveita o /join).
+    const bAccepts = (
+      await call("/v1/rooms/" + rematchByA.code + "/join", b.token, {})
+    ).data;
+    assert.equal(bAccepts.members.length, 2);
+    // 'c' clica em "criar revanche" de novo — idempotente, não fragmenta o
+    // grupo numa segunda sala, só entra na que já existe.
+    const rematchByC = (
+      await call("/v1/rooms/" + r.code + "/rematch", c.token, {})
+    ).data;
+    assert.equal(rematchByC.code, rematchByA.code);
+    assert.equal(rematchByC.members.length, 3);
+    // Sala que ainda não terminou não pode virar origem de revanche.
+    assert.equal(
+      (await call("/v1/rooms/" + rematchByA.code + "/rematch", a.token, {}))
+        .status,
+      409,
+    );
+    // A próxima sala de 'a' no MESMO jogo ("odd") já nasce no nível novo —
+    // nível é por jogo, então "math" (nunca jogado por 'a') continua no 1.
     const nextRoom = (
-      await call("/v1/rooms", a.token, { mode: "math", capacity: 2, public: false })
+      await call("/v1/rooms", a.token, { mode: "odd", capacity: 2, public: false })
     ).data;
     assert.equal(nextRoom.difficulty, 2);
+    const freshGameRoom = (
+      await call("/v1/rooms", a.token, { mode: "math", capacity: 2, public: false })
+    ).data;
+    assert.equal(freshGameRoom.difficulty, 1);
+    await call("/v1/rooms/" + freshGameRoom.code, a.token, undefined, "DELETE");
     await call("/v1/rooms/" + nextRoom.code, a.token, undefined, "DELETE");
     // Pareamento público de duas pessoas começa sem depender de anfitrião.
     const searching = (await call("/v1/rooms/random", d.token, { mode: "math" }))
@@ -199,7 +250,7 @@ test("salas: descoberta, sorteio por nível, grupo, largada, placar, replay e sa
     now += 86400001;
     assert.deepEqual((await call("/v1/rooms/stats", a.token)).data, {
       played: 1,
-      wins: 1,
+      wins: 0,
       best: 1000,
       average: 1000,
       level: 2,
@@ -255,7 +306,7 @@ test("níveis: só passa de fase acima da nota mínima, e pareamento usa tolerâ
     // Sorteio de sala pareia com tolerância — não precisa ser o mesmo nível exato.
     const b = (await call("/v1/guests", null, { name: "Nivel4" })).data;
     app.db
-      .prepare("INSERT INTO arcade_stats(player,level) VALUES(?,4)")
+      .prepare("INSERT INTO arcade_stats(player,mode,level) VALUES(?,'math',4)")
       .run(b.profile.id);
     const bRoom = (await call("/v1/rooms/random", b.token, { mode: "math" })).data;
     assert.equal(bRoom.difficulty, 4);
@@ -267,13 +318,13 @@ test("níveis: só passa de fase acima da nota mínima, e pareamento usa tolerâ
     // nova, sozinha, pra isolar o efeito da tolerância do efeito de corrida.)
     const g = (await call("/v1/guests", null, { name: "Nivel4b" })).data;
     app.db
-      .prepare("INSERT INTO arcade_stats(player,level) VALUES(?,4)")
+      .prepare("INSERT INTO arcade_stats(player,mode,level) VALUES(?,'math',4)")
       .run(g.profile.id);
     const gRoom = (await call("/v1/rooms/random", g.token, { mode: "math" })).data;
     assert.equal(gRoom.state, "waiting");
     const e = (await call("/v1/guests", null, { name: "Nivel20" })).data;
     app.db
-      .prepare("INSERT INTO arcade_stats(player,level) VALUES(?,?)")
+      .prepare("INSERT INTO arcade_stats(player,mode,level) VALUES(?,'math',?)")
       .run(e.profile.id, MAX_LEVEL);
     const eRoom = (await call("/v1/rooms/random", e.token, { mode: "math" })).data;
     assert.notEqual(
@@ -341,7 +392,10 @@ test("MD3: série melhor-de-3 continua entre provas e só fecha quando alguém v
       afterGame1.members.find((m) => m.id === b.profile.id).seriesWins,
       1,
     );
-    now += 6000;
+    // Exatamente no instante da largada da prova 2 (sem folga nenhuma) — cobre
+    // a corrida que o teste de navegador (check-md3.mjs) pegava: resultado
+    // rápido demais sendo rejeitado como "partida ainda não começou".
+    now += 5000;
     // Prova 2: b vence de novo — 2 a 0, série decidida.
     const afterGame2 = await playGame(room.code);
     assert.equal(afterGame2.state, "finished");

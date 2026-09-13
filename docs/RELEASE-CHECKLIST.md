@@ -1,36 +1,42 @@
 # Checklist de publicação
 
+Atualização local: 13/09/2026. Consulte [PILOTO-E-DISPOSITIVOS.md](PILOTO-E-DISPOSITIVOS.md) para o roteiro de validação externa.
+
 Legenda: [x] concluído no repositório; [ ] exige execução, escolha ou conta externa.
 
 ## Produto
 
-- [x] Seis modalidades entre Arcade e clássicas, todas com três níveis documentados.
-- [x] Offline, salas públicas 1×1/grupo, privadas, solo, desafio diário, duelo, rankings, níveis e conquistas.
-- [x] Reconexão de sala, revanche, estatísticas permanentes e desempate por tempo.
+- [x] Nove jogos, campanha de 30 fases, seis capítulos, treino livre e metas por modalidade.
+- [x] Campanha com sincronização opcional, desafio diário solo, salas casuais, convites e fila competitiva 1×1 MD3.
+- [x] Reconexão, continuação, revanche e histórico permanente. Pontuação igual é empate.
 - [x] Resultado idempotente e calculado no servidor.
 - [x] Conta recuperável por código e exclusão no app.
 - [ ] Teste moderado com 30–50 adultos e ajuste por dados.
-- [ ] Testes de acessibilidade com leitor de tela, daltonismo, fontes grandes e movimento reduzido.
+- [x] Testes web de 320 px, texto 200%, foco/teclado, alvos de toque e movimento reduzido.
+- [ ] Validação humana com leitores de tela nativos, daltonismo e fontes do sistema.
 - [ ] Teste físico em aparelhos Android fraco/médio/forte e iPhones suportados.
 
 ## Infraestrutura
 
-- [x] Container da API e healthcheck.
+- [x] Dockerfile com módulos atuais e healthcheck que consulta o banco.
+- [ ] Executar a imagem real; Docker não disponível na máquina de validação.
 - [x] Banco persistente para uma instância e testes de reabertura.
-- [x] API pública HTTPS no ar: https://duelou-api.fly.dev (Fly.io, `gru`). `/health` e criação de conta testados de ponta a ponta (app real, não só curl).
+- Registro de entrega anterior: API em `duelou-api.fly.dev`. Disponibilidade e versão em produção não foram revalidadas nesta revisão.
 - [x] Script de backup cifrado (AES-256-GCM) e restauração, com roundtrip testado localmente.
-- [x] Volume persistente em produção (`duelou_data`, 1GB, criptografado, snapshots automáticos com retenção de 5 pela própria Fly).
+- Configuração existente: volume `duelou_data`, montado em `/data`. Capacidade, criptografia e snapshots do provedor precisam de verificação operacional atual.
 - [ ] Domínio próprio (hoje usa o subdomínio `fly.dev` padrão).
 - [ ] Ensaio de restauração do backup cifrado próprio em ambiente isolado real (só o snapshot automático da Fly foi validado por padrão da plataforma).
-- [ ] Agendamento periódico do `npm run db:backup` em produção (hoje é manual).
-- [ ] Monitoramento de disponibilidade, erros e capacidade.
+- [x] Backup periódico em worker, retenção, restauração sem sobrescrita e recuperação de falha testados localmente.
+- [ ] Ativar com chave no ambiente de produção, cópia externa e política para suspensão da máquina.
+- [x] Contadores agregados da API e probe de disponibilidade/idade do backup.
+- [ ] Conectar probe e eventos a monitor externo e canal operacional real.
 - [ ] Segredos no provedor; ambiente de staging separado.
 - [ ] Postgres antes de múltiplas instâncias.
 
 ## Segurança e privacidade
 
 - [x] Tokens e recuperação armazenados como hash.
-- [x] Limites básicos de corpo, frequência e origem.
+- [x] Limites por conta autenticada; cotas anônimas separadas e Retry-After.
 - [x] Sem câmera, microfone ou contatos na versão 1.
 - [ ] Resolver alertas do npm audit por atualização compatível do Expo.
 - [x] Expiração, rotação e revogação de sessões.
@@ -42,7 +48,8 @@ Legenda: [x] concluído no repositório; [ ] exige execução, escolha ou conta 
 ## Lojas
 
 - [x] Identificadores, esquema, versão, ícone, splash e perfis EAS.
-- [x] Expo SDK 57 e target Android API 36 compatível com a exigência vigente.
+- [x] Projeto configurado com Expo SDK 57 e Android API 36.
+- [ ] Confirmar requisitos vigentes das lojas na data de submissão.
 - [x] Texto inicial de listagem e plano de capturas.
 - [ ] Reservar nome e confirmar direitos sobre “Duelou”.
 - [ ] Substituir usuário Expo, projectId, URL da API e contatos.

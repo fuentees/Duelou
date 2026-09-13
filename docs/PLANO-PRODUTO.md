@@ -1,5 +1,7 @@
 # Duelou — produto, regras e evolução
 
+> Registro histórico: regras de progressão, ranking, jogos e desempate deste documento foram substituídas em 12/09/2026. Consulte [Evolução competitiva](EVOLUCAO-COMPETITIVA.md) para o funcionamento atual.
+
 Data: 09/09/2026. Documento de trabalho; hipóteses precisam de teste com jogadores.
 Estado: release candidate local para beta. Não é binário assinado nem serviço público.
 

@@ -1,3 +1,4 @@
+import Character from "../components/Character";
 import React from "react";
 import { Text } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
@@ -14,12 +15,12 @@ export default function RankingTab({
   return (
     <>
       <Text style={s.muted}>
-        Últimos 7 dias. Soma do melhor resultado em cada jogo e dificuldade.
-        Empates mantêm a ordem de cadastro.
+        Competitivo 1 × 1. Classificação por habilidade; campanha, treino e
+        salas casuais não contam. As primeiras cinco séries são de colocação.
       </Text>
       {ranking.length === 0 ? (
         <Text style={s.heading}>
-          O ranking começa com sua primeira partida.
+          Jogue uma série na fila competitiva para aparecer aqui.
         </Text>
       ) : (
         ranking.map((r, i) => (
@@ -28,11 +29,14 @@ export default function RankingTab({
             colors={r.id === profileId ? gradients.cardActive : gradients.card}
             style={[s.between, s.rankRow]}
           >
+            <Character avatar={r.avatar} size={48} label={`Personagem de ${r.name}`}/>
             <Text style={r.id === profileId ? s.accent : s.heading}>
               {i === 0 ? "🥇 " : i === 1 ? "🥈 " : i === 2 ? "🥉 " : ""}
               {i + 1}. {r.name}
             </Text>
-            <Text style={s.heading}>{r.points}</Text>
+            <Text style={s.heading}>
+              {r.rank} · {r.rating} pontos{r.provisional ? " · colocação" : ""}
+            </Text>
           </LinearGradient>
         ))
       )}

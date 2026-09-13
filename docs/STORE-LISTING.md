@@ -16,8 +16,8 @@ Quem manda no grupo? No Duelou, cada partida dura poucos segundos e cada ponto p
 • Memorize sequências cada vez mais rápidas.
 • Escolha entre três dificuldades.
 • Compartilhe um código e enfrente um amigo na mesma prova.
-• Suba de nível, complete o desafio diário e desbloqueie conquistas.
-• Compare seus melhores resultados no ranking dos últimos sete dias.
+• Suba de nível em cada jogo e desbloqueie conquistas.
+• Compare seus melhores resultados no ranking da Arena.
 
 As moedas do jogo não têm valor monetário e não há prêmio em dinheiro.
 
@@ -30,11 +30,11 @@ Classificação sugerida para questionário: sem violência realista, apostas, c
 
 Gerar em aparelho/build final, sem dados fictícios:
 
-1. Tela inicial com desafio diário.
+1. Tela inicial com o resumo da conta.
 2. Cronômetro em execução.
 3. Reflexo na tela “AGORA”.
 4. Memória com quatro blocos.
-5. Duelo concluído.
+5. Sala da Arena concluída.
 6. Ranking.
 7. Perfil e conquistas.
 

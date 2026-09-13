@@ -14,29 +14,30 @@ Para celular: veja [operação e rede](docs/OPERACAO.md). Expo e API precisam es
 
 ## Implementado
 
-- Salas públicas, pareamento automático por jogo/nível e salas privadas de 2, 4 ou 6 jogadores, no formato melhor de 1 ou melhor de 3 provas.
-- Cinco jogos Arcade (incluindo Sequência lógica e Cor certa) com progressão de 1 a 20 níveis (extensível), que sobe sozinha ao concluir a fase atual com boa pontuação — sem escolha manual de dificuldade. Também jogáveis offline sem conta, com progresso salvo no aparelho.
-- Largada e placar de grupo sincronizados pelo servidor, reconexão automática, desempate por tempo, revanche, ranking Arcade e estatísticas pessoais permanentes. [Detalhes dos níveis e salas](docs/SALAS-E-NIVEIS.md).
+- Nove jogos com campanha solo de 30 fases, seis capítulos, estrelas, recordes e exemplos. Progresso local com sincronização opcional, independente da classificação.
+- Treino livre em qualquer nível e treino durante a busca competitiva.
+- Fila competitiva 1×1 MD3, rotação entre três jogos de raciocínio, classificação Elo e patente; atualização por série, sem desempate pela conexão.
+- Respostas competitivas validadas por etapa no servidor, com combo, retomada e proteção contra repetição de resultados.
+- Salas casuais públicas e privadas para 2, 4 e 6 pessoas nos nove jogos, convite direto e revanche. Não alteram classificação competitiva.
+- Após a partida, Continuar avança um nível nas salas casuais (até 30) e permite ao grupo aceitar o mesmo convite; Revanche mantém o nível. No PvP competitivo, Continuar retorna à fila oficial sem precisar sair para o menu.
+- Desafio diário solo, recorde local por dia e objetivos semanais opcionais.
+- Conta convidada, recuperação, sessão persistente, exclusão, XP, conquistas e estatísticas online.
+- Métricas internas agregadas, com eventos sem nomes/segredos/respostas e retenção de 90 dias.
 
-- Jogador convidado e sessão salva no aparelho.
-- Cronômetro, reflexo e memória com três dificuldades.
-- Pontos calculados no servidor, XP, nível, moedas, sequência e histórico persistidos.
-- Duelo por código compartilhável com dois jogadores.
-- Desafio diário determinístico, uma tentativa por conta e oito conquistas derivadas do histórico, incluindo duas ligadas ao desempenho no Arcade.
-- Aparência renovada: gradientes, cores por jogo, patente (Bronze a Lendário) por nível e animações de placar/progresso.
-- Recuperação por código, rotação/expiração de sessão e saída com revogação do token.
-- Ranking real dos melhores resultados dos últimos sete dias.
-- Exclusão de conta, limites de requisição e resultados idempotentes.
+As regras atuais estão em [Evolução competitiva](docs/EVOLUCAO-COMPETITIVA.md). A versão local precisa ser implantada junto com sua API para disponibilizar as novas funcionalidades fora desta máquina.
 
 ## Verificar
 
 `npm run test:api` e `npm run typecheck`.
-Com API e web em execução: `npm run test:ui`, `npm run test:arcade` e `npm run test:md3` (Microsoft Edge instalado).
-`npm run build:web` gera o build de prévia.
+Com API e web em execução: `npm run test:ui`, `npm run test:arcade` `npm run test:md3` e `npm run test:competitive` (Microsoft Edge instalado).
+`npm run test:account` verifica Menu, cadastro, recuperação e exclusão de conta pelo navegador usando um banco temporário em memória. Requer a prévia web em execução.
+`npm run test:a11y` verifica layout e controles acessíveis na web; `npm run test:resilience` simula CPU lenta, latência e perda de resposta.
+`npm run build:web` gera o build de prévia; `npm run check:bundle` evita regressão de tamanho e fontes.
+`npm run ops:check` verifica disponibilidade e, opcionalmente, backup recente.
 
 ## Estado da entrega
 
 Testes de API, tipos, bundle web e jornada de interface realizados localmente. Não publicado nas lojas nem testado em aparelho físico.
-API pública no ar em https://duelou-api.fly.dev (Fly.io, volume persistente, testada de ponta a ponta com o app real). Sem monetização, câmera ou push. Domínio próprio, dados jurídicos, contas de loja, build assinado e testes físicos continuam sendo etapas externas obrigatórias. O SDK 57 mira Android API 36; o audit mantém 10 alertas moderados transitivos no toolchain Expo sem correção compatível automática.
+Uma entrega anterior registrou API em `duelou-api.fly.dev`; o ambiente externo não foi revalidado nem atualizado nesta revisão. Sem monetização, câmera ou push. Domínio próprio, dados jurídicos, contas de loja, build assinado e testes físicos continuam sendo etapas externas obrigatórias. O SDK 57 mira Android API 36; o audit mantém 10 alertas moderados transitivos no toolchain Expo sem correção compatível automática.
 
 [Plano de produto, níveis e evolução](docs/PLANO-PRODUTO.md) · [Operação, API e pendências](docs/OPERACAO.md).

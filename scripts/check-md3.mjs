@@ -1,8 +1,11 @@
+import { createApp } from "../server/server.mjs";
 import { chromium } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import assert from "node:assert/strict";
+const app=createApp(":memory:");
+await new Promise(r=>app.server.listen(0,"127.0.0.1",r));
 const browser = await chromium.launch({ channel: "msedge", headless: true });
-const base = "http://127.0.0.1:3001",
+const base = "http://127.0.0.1:"+app.server.address().port,
   users = [];
 const errors = [];
 const call = async (path, token, body, method) => {
@@ -68,24 +71,31 @@ try {
       user.token,
     );
     user.page = await user.context.newPage();
+    await user.page.route("**:3001/**",async route=>{const u=new URL(route.request().url());const response=await route.fetch({url:base+u.pathname+u.search});await route.fulfill({response});});
     user.page.on("pageerror", (e) => errors.push(e.message));
     await user.page.goto("http://localhost:8083");
     await user.page.getByText(user.profile.name, { exact: true }).waitFor();
+    await user.page.getByRole("button",{name:"Arena",exact:true}).click();
+    await user.page.getByRole("button",{name:"Conta rápida",exact:true}).click();
+    await user.page.getByText("Como você quer jogar?",{exact:true}).waitFor();
+    await user.page.getByRole("button",{name:"Multijogador",exact:true}).click();
   }
   const [host, guest] = users;
-  await host.page.getByRole("tab", { name: "Com amigos", exact: true }).click();
+  await host.page.getByRole("button", { name: "Criar sala", exact: true }).click();
+  await host.page.getByRole("button",{name:"Só por convite",exact:true}).click();
+  await host.page.getByRole("button",{name:"Nível 1",exact:true}).click();
   await host.page.getByRole("button", { name: "Melhor de 3", exact: true }).click();
   const created = host.page.waitForResponse(
     (r) => r.url().endsWith("/v1/rooms") && r.request().method() === "POST",
   );
   await host.page
-    .getByRole("button", { name: "Criar sala privada", exact: true })
+    .getByRole("button", { name: "Criar e entrar", exact: true })
     .click();
   const room = await (await created).json();
   assert.equal(room.format, "md3");
   assert.equal(room.gamesNeeded, 3);
   assert.equal(room.mode, "math");
-  await guest.page.getByRole("tab", { name: "Com amigos", exact: true }).click();
+  await guest.page.getByRole("button", { name: "Entrar em uma sala", exact: true }).click();
   await guest.page.getByLabel("Código da sala", { exact: true }).fill(room.code);
   await guest.page
     .getByRole("button", { name: "Entrar pelo código", exact: true })
@@ -130,4 +140,5 @@ try {
 } finally {
   for (const u of users) await call("/v1/me", u.token, null, "DELETE").catch(() => {});
   await browser.close();
+  await new Promise(r=>app.server.close(r));app.db.close();
 }

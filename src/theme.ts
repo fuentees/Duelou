@@ -9,19 +9,19 @@ export const palette = {
   borderActive: "#C9D0FA",
   text: "#1E2233",
   textDim: "#5B6072",
-  textFaint: "#6E7391",
-  cyan: "#0EA5B7",
-  violet: "#7C5CFF",
+  textFaint: "#646981",
+  cyan: "#087E8B",
+  violet: "#6742DB",
   amber: "#FF9F1C",
   pink: "#FF4D8D",
-  green: "#16A34A",
+  green: "#187A3D",
   red: "#E11D48",
   gold: "#FFB703",
 };
 export const gradients = {
-  hero: ["#7C5CFF", "#12B8C4"] as const,
+  hero: ["#6742DB", "#086E7A"] as const,
   brand: ["#7C5CFF", "#12B8C4"] as const,
-  primaryButton: ["#8A6BFF", "#5B4FE8"] as const,
+  primaryButton: ["#7049DB", "#5040D1"] as const,
   success: ["#34D399", "#16A34A"] as const,
   danger: ["#FB7185", "#E11D48"] as const,
   gold: ["#FFD166", "#FF9F1C"] as const,
@@ -36,6 +36,7 @@ export const gameColors: Record<string, readonly [string, string]> = {
   colors: ["#22C55E", "#16A34A"],
   timer: ["#12B8C4", "#0E93A0"],
   reflex: ["#FF4D8D", "#E0367A"],
+  aim: ["#E11D48", "#B0123A"],
   memory: ["#7C5CFF", "#5B4FE8"],
 };
 export const radius = { sm: 10, md: 14, lg: 20, xl: 28, pill: 999 };
@@ -57,11 +58,20 @@ export const shadow = {
 };
 export function contrastText(hex: string): string {
   const n = hex.replace("#", "");
-  const r = parseInt(n.substring(0, 2), 16),
-    g = parseInt(n.substring(2, 4), 16),
-    b = parseInt(n.substring(4, 6), 16);
-  return (r * 299 + g * 587 + b * 114) / 1000 > 160 ? "#1E2233" : "#FFFFFF";
+  const luminance = (color: string) => {
+    const parts = [0, 2, 4].map((i) => {
+      const v = parseInt(color.slice(i, i + 2), 16) / 255;
+      return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+    });
+    return parts[0] * 0.2126 + parts[1] * 0.7152 + parts[2] * 0.0722;
+  };
+  const light = luminance(n),
+    dark = luminance("1E2233");
+  return (light + 0.05) / (dark + 0.05) >= 1.05 / (light + 0.05)
+    ? "#1E2233"
+    : "#FFFFFF";
 }
+
 export type Rank = {
   name: string;
   icon: string;

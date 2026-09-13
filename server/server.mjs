@@ -1,34 +1,37 @@
+import { readAvatar, validAvatar } from "../shared/avatar.mjs";
+import { startOperations } from "./operations.mjs";
+import { rateLimiter } from "./rate-limit.mjs";
+import { persistence } from "./persistence.mjs";
 import http from "node:http";
-import { roomRoutes } from './rooms.mjs';
+import { roomRoutes } from "./rooms.mjs";
 import { DatabaseSync } from "node:sqlite";
 import { randomBytes, randomUUID, createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  challenge,
-  dailyChallenge,
-  games,
-  score,
-  progression,
-  reward,
-} from "./rules.mjs";
+import { ratingName } from "../shared/progression.mjs";
+import { progression } from "./rules.mjs";
+import { MAX_LEVEL, modes } from "../shared/arcade.mjs";
 const hash = (t) => createHash("sha256").update(t).digest("hex");
 const day = (t) => new Date(t).toISOString().slice(0, 10);
 const SESSION_TTL_MS = 180 * 24 * 60 * 60 * 1000;
 export function createApp(
   path = "data/duelou.sqlite",
   clock = () => Date.now(),
+  options = {},
 ) {
   if (path !== ":memory:")
     mkdirSync(dirname(resolve(path)), { recursive: true });
   const db = new DatabaseSync(path);
   db.exec(`PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL;
  CREATE TABLE IF NOT EXISTS players(id TEXT PRIMARY KEY,name TEXT NOT NULL,token TEXT UNIQUE NOT NULL,created INTEGER NOT NULL);
- CREATE TABLE IF NOT EXISTS duels(code TEXT PRIMARY KEY,host TEXT NOT NULL REFERENCES players(id),guest TEXT REFERENCES players(id),config TEXT NOT NULL,expires INTEGER NOT NULL);
- CREATE TABLE IF NOT EXISTS matches(id TEXT PRIMARY KEY,player TEXT NOT NULL REFERENCES players(id),duel TEXT REFERENCES duels(code),config TEXT NOT NULL,started INTEGER NOT NULL,finished INTEGER,score INTEGER,xp INTEGER,coins INTEGER,UNIQUE(player,duel));
- CREATE INDEX IF NOT EXISTS matches_player ON matches(player,finished);
  PRAGMA user_version=1;`);
+  // Duelo por código e desafio diário eram um sistema de progresso (XP,
+  // moedas, histórico, conquistas) inteiramente separado da Arena — nada na
+  // navegação atual escreve mais nessas tabelas. Perfil, conquistas e
+  // histórico agora vêm só da Arena (arcade_stats/rooms/room_members), uma
+  // fonte só; as tabelas antigas somem de vez, mesmo em bancos já existentes.
+  db.exec("DROP TABLE IF EXISTS matches; DROP TABLE IF EXISTS duels;");
   const playerColumns = db.prepare("PRAGMA table_info(players)").all();
   if (!playerColumns.some((c) => c.name === "recovery"))
     db.exec("ALTER TABLE players ADD COLUMN recovery TEXT");
@@ -37,14 +40,8 @@ export function createApp(
   db.prepare(
     "UPDATE players SET token_expires=? WHERE token_expires IS NULL",
   ).run(clock() + SESSION_TTL_MS);
-  const matchColumns = db.prepare("PRAGMA table_info(matches)").all();
-  if (!matchColumns.some((c) => c.name === "daily"))
-    db.exec("ALTER TABLE matches ADD COLUMN daily TEXT");
   db.exec(
     "CREATE UNIQUE INDEX IF NOT EXISTS players_recovery ON players(recovery) WHERE recovery IS NOT NULL",
-  );
-  db.exec(
-    "CREATE UNIQUE INDEX IF NOT EXISTS matches_daily_player ON matches(player,daily) WHERE daily IS NOT NULL",
   );
   db.exec("PRAGMA user_version=3");
   const get = (sql, ...v) => db.prepare(sql).get(...v);
@@ -53,25 +50,24 @@ export function createApp(
   const fail = (status, message) => {
     throw Object.assign(Error(message), { status });
   };
-  const tx = (fn) => {
-    db.exec("BEGIN IMMEDIATE");
-    try {
-      const r = fn();
-      db.exec("COMMIT");
-      return r;
-    } catch (e) {
-      db.exec("ROLLBACK");
-      throw e;
-    }
-  };
   const profile = (id) => {
-    const p = get("SELECT id,name FROM players WHERE id=?", id);
-    const totals = get(
-      "SELECT COALESCE(SUM(xp),0) xp,COALESCE(SUM(coins),0) coins,COUNT(*) played FROM matches WHERE player=? AND finished IS NOT NULL",
+    const p = get("SELECT id,name,avatar FROM players WHERE id=?", id);
+    // Uma fonte só pro progresso da conta: arcade_stats (Arena) já soma
+    // partidas/vitórias/melhor pontuação/nível por jogo — XP é derivado do
+    // total de pontos já feito em qualquer prova (dividido por 50 pra manter
+    // a escala de progression() razoável; não é uma contagem à parte, some
+    // com ela se algum dia esse total for zerado).
+    const arcade = get(
+      "SELECT COALESCE(SUM(played),0) played,COALESCE(SUM(total),0) score,COALESCE(MAX(best),0) best,COALESCE(SUM(wins),0) wins,COALESCE(MAX(level),1) level FROM arcade_stats WHERE player=?",
       id,
     );
+    const gamesPlayed = get(
+      "SELECT COUNT(*) n FROM arcade_stats WHERE player=? AND played>0",
+      id,
+    ).n;
+    const xp = Math.round(arcade.score / 50);
     const dates = all(
-      "SELECT DISTINCT substr(datetime(finished/1000,'unixepoch'),1,10) d FROM matches WHERE player=? AND finished IS NOT NULL ORDER BY d DESC",
+      "SELECT DISTINCT substr(datetime(finished/1000,'unixepoch'),1,10) d FROM game_history WHERE player=? ORDER BY d DESC",
       id,
     ).map((x) => x.d);
     let streak = 0,
@@ -83,44 +79,91 @@ export function createApp(
       t -= 86400000;
     }
     const facts = {
-      first_match: totals.played >= 1,
-      ten_matches: totals.played >= 10,
-      perfect: !!get(
-        "SELECT 1 ok FROM matches WHERE player=? AND score=1000 LIMIT 1",
-        id,
-      ),
-      first_duel: !!get(
-        "SELECT 1 ok FROM matches WHERE player=? AND duel IS NOT NULL AND finished IS NOT NULL LIMIT 1",
-        id,
-      ),
-      all_games:
-        get(
-          "SELECT COUNT(DISTINCT json_extract(config,'$.game')) n FROM matches WHERE player=? AND finished IS NOT NULL",
-          id,
-        ).n === 3,
+      first_match: arcade.played >= 1,
+      ten_matches: arcade.played >= 10,
+      perfect: arcade.best >= 1000,
+      all_games: gamesPlayed >= modes.length,
       streak_7: streak >= 7,
-      arcade_wins:
-        (get("SELECT wins FROM arcade_stats WHERE player=?", id)?.wins || 0) >=
-        5,
-      arcade_ace:
-        (get("SELECT best FROM arcade_stats WHERE player=?", id)?.best || 0) >=
-        950,
+      arcade_wins: arcade.wins >= 5,
+      arcade_ace: arcade.best >= 950,
+      arcade_legend: arcade.level >= MAX_LEVEL,
     };
     const definitions = [
-      ["first_match", "Primeiro passo", "Conclua sua primeira partida", "⚡"],
-      ["ten_matches", "Competidor", "Conclua 10 partidas", "🥊"],
-      ["perfect", "Perfeição", "Faça 1.000 pontos", "🎯"],
-      ["first_duel", "Rivalidade", "Conclua um duelo", "🤺"],
-      ["all_games", "Versátil", "Conclua os três jogos", "🧠"],
+      [
+        "first_match",
+        "Primeiro passo",
+        "Conclua sua primeira partida na Arena",
+        "⚡",
+      ],
+      ["ten_matches", "Competidor", "Conclua 10 partidas na Arena", "🥊"],
+      ["perfect", "Perfeição", "Faça 1.000 pontos em uma prova", "🎯"],
+      [
+        "all_games",
+        "Versátil",
+        `Jogue todos os ${modes.length} jogos da Arena`,
+        "🧠",
+      ],
       ["streak_7", "Em chamas", "Jogue por sete dias", "🔥"],
       ["arcade_wins", "Campeão de sala", "Vença 5 salas no Arcade", "🏆"],
-      ["arcade_ace", "Mira certeira", "Faça 950+ pontos em uma sala", "🎖️"],
+      ["arcade_ace", "Precisão de elite", "Faça 950+ pontos em uma sala", "🎖️"],
+      [
+        "arcade_legend",
+        "Lendário",
+        `Alcance o nível ${MAX_LEVEL} em algum jogo`,
+        "👑",
+      ],
     ];
     return {
       ...p,
-      ...totals,
+      avatar:readAvatar(p.avatar),
+      competitive: (() => {
+        const r = get(
+          "SELECT rating,played,wins FROM competitive_ratings WHERE player=?",
+          id,
+        );
+        return r
+          ? { ...r, rank: ratingName(r.rating), provisional: r.played < 5 }
+          : null;
+      })(),
+      weekly: (() => {
+        const start =
+          Math.floor((clock() + 3 * 86400000) / (7 * 86400000)) * 7 * 86400000 -
+          3 * 86400000;
+        const count = (name) =>
+          get(
+            "SELECT COUNT(*) n FROM product_events WHERE player=? AND name=? AND created>=?",
+            id,
+            name,
+            start,
+          ).n;
+        const wins = get(
+          "SELECT COUNT(*) n FROM competitive_results WHERE player=? AND outcome=1 AND status='counted' AND created>=?",
+          id,
+          start,
+        ).n;
+        return [
+          {
+            name: "Complete três disputas",
+            current: Math.min(3, count("series_finished")),
+            target: 3,
+          },
+          {
+            name: "Vença uma série competitiva",
+            current: Math.min(1, wins),
+            target: 1,
+          },
+          {
+            name: "Convide para uma revanche",
+            current: Math.min(1, count("rematch_created")),
+            target: 1,
+          },
+        ];
+      })(),
+      xp,
+      coins: Math.floor(xp / 5),
+      played: arcade.played,
       streak,
-      ...progression(totals.xp),
+      ...progression(xp),
       achievements: definitions.map(([key, name, description, icon]) => ({
         key,
         name,
@@ -130,17 +173,18 @@ export function createApp(
       })),
     };
   };
-  const result = (m) => ({
-    id: m.id,
-    score: m.score,
-    xp: m.xp,
-    coins: m.coins,
-    profile: profile(m.player),
-  });
-  const limits = new Map();
+  const limitRequest = rateLimiter(clock);
+  const storage = persistence(db, clock);
   const rooms = roomRoutes(db, clock);
-  const presence = new Map();
+  const counters = { requests: 0, errors: 0, limited: 0, slow: 0 };
   const server = http.createServer(async (req, res) => {
+    const received = performance.now();
+    res.once("finish", () => {
+      counters.requests++;
+      if (res.statusCode >= 500) counters.errors++;
+      if (res.statusCode === 429) counters.limited++;
+      if (performance.now() - received > 1000) counters.slow++;
+    });
     const origin = req.headers.origin;
     const allowed = (
       process.env.ALLOWED_ORIGINS ||
@@ -164,21 +208,32 @@ export function createApp(
       }
       if (origin && !allowed.includes(origin))
         fail(403, "Origem não autorizada");
-      const now = clock(),
-        ip = req.socket.remoteAddress;
-      if (limits.size > 10000)
-        for (const [k, v] of limits) if (v.until < now) limits.delete(k);
-      const limit = limits.get(ip) || { count: 0, until: now + 60000 };
-      if (limit.until < now) {
-        limit.count = 0;
-        limit.until = now + 60000;
-      }
-      limit.count++;
-      limits.set(ip, limit);
-      if (limit.count > 180)
-        fail(429, "Muitas solicitações. Aguarde um minuto.");
+      const now = clock();
       const url = new URL(req.url, "http://local"),
         route = url.pathname;
+      // Use the verified account, never a caller-controlled token/header as identity.
+      const token = req.headers.authorization?.replace(/^Bearer /, "");
+      const player =
+        token &&
+        get(
+          "SELECT id FROM players WHERE token=? AND token_expires>?",
+          hash(token),
+          now,
+        );
+      const isSessionRoute =
+        req.method === "POST" &&
+        (route === "/v1/guests" || route === "/v1/sessions/recover");
+      const isHealth =
+        req.method === "GET" && (route === "/health" || route === "/v1/health");
+      // Forwarded headers are intentionally ignored. Shared proxy IPs do not
+      // restrict signed-in players; anonymous account/recovery attempts remain bounded.
+      const ip = req.socket.remoteAddress || "unknown";
+      if (isSessionRoute) limitRequest(`session:${route}:${ip}`, 15);
+      else if (isHealth) limitRequest(`health:${ip}`, 120);
+      else if (player) limitRequest(`player:${player.id}`, 240);
+      else limitRequest(`anonymous:${ip}`, 60);
+      if (!isSessionRoute && !isHealth && !player)
+        fail(401, "Sessão inválida. Entre novamente.");
       let body = {};
       if (req.method === "POST") {
         let raw = "";
@@ -195,8 +250,18 @@ export function createApp(
         if (!body || Array.isArray(body) || typeof body !== "object")
           fail(400, "Corpo inválido");
       }
-      if (["/health", "/v1/health"].includes(route) && req.method === "GET")
-        return send(200, { ok: true, version: 1 });
+      if (["/health", "/v1/health"].includes(route) && req.method === "GET") {
+        try {
+          db.prepare("SELECT 1 FROM players LIMIT 1").get();
+        } catch {
+          return send(503, { ok: false, version: 1 });
+        }
+        return send(200, {
+          ok: true,
+          version: 1,
+          backup: options.backupStatus?.() || { state: "disabled" },
+        });
+      }
       if (route === "/v1/guests" && req.method === "POST") {
         const name = typeof body.name === "string" ? body.name.trim() : "";
         if (!/^[\p{L}\p{N} _-]{2,24}$/u.test(name))
@@ -241,23 +306,17 @@ export function createApp(
           profile: profile(recovered.id),
         });
       }
-      const token = req.headers.authorization?.replace(/^Bearer /, "");
-      const player =
-        token &&
-        get(
-          "SELECT id FROM players WHERE token=? AND token_expires>?",
-          hash(token),
-          now,
-        );
-      if (!player) fail(401, "Sessão inválida. Entre novamente.");
       const uid = player.id;
-      const roomResponse = rooms(route, req.method, body, uid);
+      const campaignResponse = storage.route(route, req.method, uid, body);
+      if (campaignResponse) return send(200, campaignResponse);
+      const roomResponse = rooms(
+        route,
+        req.method,
+        body,
+        uid,
+        url.searchParams,
+      );
       if (roomResponse) return send(roomResponse.status, roomResponse.data);
-      if (route === "/v1/presence" && req.method === "POST") {
-        presence.set(uid, now);
-        for (const [id, seen] of presence) if (now - seen > 20000) presence.delete(id);
-        return send(200, { connected: true });
-      }
       if (route === "/v1/session" && req.method === "DELETE") {
         run(
           "UPDATE players SET token=?,token_expires=? WHERE id=?",
@@ -267,266 +326,78 @@ export function createApp(
         );
         return send(200, { revoked: true });
       }
+      if(route === "/v1/avatar" && req.method === "POST"){
+        if(!validAvatar(body))fail(400,"Escolha um personagem válido.");
+        run("UPDATE players SET avatar=? WHERE id=?",JSON.stringify(body),uid);
+        return send(200,profile(uid));
+      }
       if (route === "/v1/me" && req.method === "GET")
         return send(200, profile(uid));
-      if (route === "/v1/games" && req.method === "GET")
-        return send(200, { games, difficulties: [1, 2, 3], rulesVersion: 2 });
-      if (route === "/v1/daily" && req.method === "GET") {
-        const key = day(now);
-        const played = get(
-          "SELECT score FROM matches WHERE player=? AND daily=? AND finished IS NOT NULL",
-          uid,
-          key,
+      if (route === "/v1/history" && req.method === "GET") {
+        const before = Number(
+          url.searchParams.get("before") || Number.MAX_SAFE_INTEGER,
         );
-        return send(200, {
-          key,
-          config: dailyChallenge(key),
-          completed: !!played,
-          score: played?.score ?? null,
-          resetsAt: Date.parse(key + "T00:00:00Z") + 86400000,
-        });
-      }
-      if (route === "/v1/leaderboard" && req.method === "GET") {
-        const since = now - 7 * 86400000;
+        if (!Number.isSafeInteger(before) || before < 0)
+          fail(400, "Página inválida.");
         return send(
           200,
           all(
-            "SELECT p.id,p.name,SUM(m.score) points FROM players p JOIN (SELECT player,MAX(score) score FROM matches WHERE finished>=? GROUP BY player,json_extract(config,'$.game'),json_extract(config,'$.difficulty')) m ON m.player=p.id GROUP BY p.id ORDER BY points DESC,p.created ASC LIMIT 50",
-            since,
-          ),
-        );
-      }
-      if (route === "/v1/history" && req.method === "GET")
-        return send(
-          200,
-          all(
-            "SELECT id,config,score,xp,finished FROM matches WHERE player=? AND finished IS NOT NULL ORDER BY finished DESC LIMIT 30",
+            "SELECT rowid cursor,room,game_index,mode,difficulty,rules_version rulesVersion,ranked,score,finished,details,outcome FROM game_history WHERE player=? AND rowid<? ORDER BY rowid DESC LIMIT 30",
             uid,
-          ).map((m) => ({ ...m, config: JSON.parse(m.config) })),
-        );
-      if (route === "/v1/duels" && req.method === "POST") {
-        let config;
-        try {
-          config = challenge(body.game, body.difficulty);
-        } catch (e) {
-          fail(400, e.message);
-        }
-        if (
-          get(
-            "SELECT COUNT(*) n FROM duels WHERE host=? AND expires>?",
-            uid,
-            now,
-          ).n >= 20
-        )
-          fail(409, "Limite de 20 duelos ativos.");
-        const code = randomBytes(5).toString("hex").toUpperCase();
-        run(
-          "INSERT INTO duels VALUES(?,?,NULL,?,?)",
-          code,
-          uid,
-          JSON.stringify(config),
-          now + 86400000,
-        );
-        return send(201, { code, expires: now + 86400000, config });
-      }
-      if (route === "/v1/duels" && req.method === "GET") {
-        return send(
-          200,
-          all(
-            "SELECT * FROM duels WHERE host=? OR guest=? ORDER BY expires DESC LIMIT 30",
-            uid,
-            uid,
-          ).map((d) => ({
-            ...d,
-            config: JSON.parse(d.config),
-            participants: [d.host, d.guest].filter(Boolean).map((id) => ({
-              id,
-              name: get("SELECT name FROM players WHERE id=?", id)?.name,
-              online: now - (presence.get(id) || 0) < 20000,
-            })),
-            results: all(
-              "SELECT player,score FROM matches WHERE duel=? AND finished IS NOT NULL",
-              d.code,
-            ),
+            before,
+          ).map((h) => ({
+            ...h,
+            id: h.room + ":" + h.game_index,
+            ranked: !!h.ranked,
+            details: JSON.parse(h.details),
           })),
         );
       }
-      if (route === "/v1/duels/join" && req.method === "POST") {
-        const code = String(body.code || "")
-          .trim()
-          .toUpperCase();
-        return send(
-          200,
-          tx(() => {
-            const d = get("SELECT * FROM duels WHERE code=?", code);
-            if (!d || d.expires < now)
-              fail(404, "Duelo não encontrado ou expirado.");
-            if (d.host !== uid && d.guest && d.guest !== uid)
-              fail(409, "Este duelo já tem dois jogadores.");
-            if (d.host !== uid && !d.guest)
-              run("UPDATE duels SET guest=? WHERE code=?", uid, code);
-            return { code, config: JSON.parse(d.config) };
-          }),
-        );
-      }
-      if (route === "/v1/matches" && req.method === "POST") {
-        let config,
-          duel = null,
-          daily = null;
-        if (body.code) {
-          const d = get(
-            "SELECT * FROM duels WHERE code=?",
-            String(body.code).toUpperCase(),
-          );
-          if (!d || d.expires < now || ![d.host, d.guest].includes(uid))
-            fail(403, "Entre em um duelo válido primeiro.");
-          duel = d.code;
-          config = JSON.parse(d.config);
-          const existing = get(
-            "SELECT * FROM matches WHERE player=? AND duel=?",
-            uid,
-            duel,
-          );
-          if (existing) {
-            if (now - existing.started > 300000)
-              fail(409, "A tentativa deste duelo expirou. Crie uma revanche.");
-            if (existing.finished !== null)
-              fail(409, "Sua tentativa neste duelo já foi concluída.");
-            return send(200, {
-              id: existing.id,
-              config,
-              expires: existing.started + 300000,
-            });
-          }
-        } else if (body.daily === true) {
-          daily = day(now);
-          config = dailyChallenge(daily);
-          const existing = get(
-            "SELECT * FROM matches WHERE player=? AND daily=?",
-            uid,
-            daily,
-          );
-          if (existing) {
-            if (existing.finished !== null)
-              fail(409, "Você já concluiu o desafio de hoje.");
-            if (now - existing.started > 300000)
-              fail(409, "A tentativa diária expirou. Volte amanhã.");
-            return send(200, {
-              id: existing.id,
-              config,
-              expires: existing.started + 300000,
-            });
-          }
-        } else {
-          try {
-            config = challenge(body.game, body.difficulty);
-          } catch (e) {
-            fail(400, e.message);
-          }
-        }
-        if (
-          get(
-            "SELECT COUNT(*) n FROM matches WHERE player=? AND started>?",
-            uid,
-            now - 60000,
-          ).n >= 15
-        )
-          fail(429, "Aguarde antes de iniciar outra partida.");
-        const id = randomUUID();
-        run(
-          "INSERT INTO matches(id,player,duel,config,started,daily) VALUES(?,?,?,?,?,?)",
-          id,
-          uid,
-          duel,
-          JSON.stringify(config),
-          now,
-          daily,
-        );
-        return send(201, { id, config, expires: now + 300000 });
-      }
-      const match = route.match(/^\/v1\/matches\/([a-f0-9-]+)\/finish$/);
-      if (match && req.method === "POST")
-        return send(
-          200,
-          tx(() => {
-            const m = get(
-              "SELECT * FROM matches WHERE id=? AND player=?",
-              match[1],
-              uid,
-            );
-            if (!m) fail(404, "Partida não encontrada.");
-            if (m.finished !== null) return result(m);
-            if (now - m.started > 300000)
-              fail(409, "Partida expirou. Inicie outra.");
-            const c = JSON.parse(m.config);
-            let points;
-            try {
-              points = score(c, body);
-            } catch (e) {
-              fail(400, e.message);
-            }
-            const minimum =
-              c.game === "timer"
-                ? body.elapsedMs
-                : c.game === "reflex"
-                  ? body.falseStart
-                    ? 0
-                    : (c.waits || [c.waitMs]).reduce((a, b) => a + b, 0) +
-                      (body.reactions || [body.reactionMs]).reduce(
-                        (a, b) => a + b,
-                        0,
-                      )
-                  : c.sequence.length * (c.flashMs + 250);
-            if (now - m.started + 100 < minimum)
-              fail(400, "Duração incompatível com a partida.");
-            const plays = get(
-              "SELECT COUNT(*) n FROM matches WHERE player=? AND finished>=?",
-              uid,
-              Date.parse(day(now)),
-            ).n;
-            const r = reward(points, c.difficulty, plays);
-            run(
-              "UPDATE matches SET finished=?,score=?,xp=?,coins=? WHERE id=?",
-              now,
-              points,
-              r.xp,
-              r.coins,
-              m.id,
-            );
-            return result(get("SELECT * FROM matches WHERE id=?", m.id));
-          }),
-        );
       if (route === "/v1/me" && req.method === "DELETE") {
-        tx(() => {
-          run(
-            "DELETE FROM matches WHERE player=? OR duel IN (SELECT code FROM duels WHERE host=?)",
-            uid,
-            uid,
-          );
-          run("DELETE FROM duels WHERE host=?", uid);
-          run("UPDATE duels SET guest=NULL WHERE guest=?", uid);
-          run("DELETE FROM players WHERE id=?", uid);
-        });
+        run("DELETE FROM players WHERE id=?", uid);
         return send(200, { deleted: true });
       }
       fail(404, "Rota não encontrada.");
     } catch (e) {
+      if (e.retryAfter) res.setHeader("Retry-After", String(e.retryAfter));
       if (!res.headersSent)
         send(e.status || 500, {
           error: e.status ? e.message : "Erro interno do servidor.",
         });
-      if (!e.status) console.error(e);
+      if (!e.status)
+        console.error(JSON.stringify({ event: "request_failed", status: 500 }));
     }
   });
   server.requestTimeout = 15000;
   server.headersTimeout = 10000;
+  const telemetry = setInterval(() => {
+    if (counters.requests)
+      console.log(
+        JSON.stringify({ event: "api_window", ...counters, windowSeconds: 60 }),
+      );
+    Object.keys(counters).forEach((key) => (counters[key] = 0));
+  }, 60000);
+  telemetry.unref();
+  server.once("close", () => clearInterval(telemetry));
   return { server, db };
 }
 if (
   process.argv[1] &&
   resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
-  const { server } = createApp(process.env.DB_PATH || "data/duelou.sqlite");
+  const dbPath = process.env.DB_PATH || "data/duelou.sqlite";
+  let operations;
+  const { server, db } = createApp(dbPath, Date.now, {
+    backupStatus: () => operations?.status,
+  });
+  operations = startOperations({ dbPath });
+  const shutdown = () =>
+    server.close(async () => {
+      await operations.stop();
+      db.close();
+    });
+  process.once("SIGTERM", shutdown);
+  process.once("SIGINT", shutdown);
   server.listen(
     Number(process.env.PORT || 3001),
     process.env.HOST || "127.0.0.1",

@@ -27,13 +27,21 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#F5F6FC"
       },
-      "permissions": ["android.permission.INTERNET", "android.permission.ACCESS_NETWORK_STATE"]
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png",
       "bundler": "metro"
     },
-    "plugins": ["expo-secure-store", "expo-font", "expo-status-bar"],
+    "plugins": [
+      "expo-secure-store",
+      "expo-font",
+      "expo-status-bar",
+      "expo-audio"
+    ],
     "description": "Jogos rápidos online, em grupo e offline para desafiar amigos ou encontrar novos rivais."
   }
 }

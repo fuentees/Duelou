@@ -1,11 +1,15 @@
-import React from "react";
+import CharacterEditor from "../components/CharacterEditor";
+import React, { useEffect, useRef, useState } from "react";
+import { captureSession } from "../api";
 import { Text, View } from "react-native";
 import { palette, shadow } from "../theme";
+import { modes } from "../../shared/arcade.mjs";
 import Button from "../components/Button";
 import Card from "../components/Card";
 import RankBadge from "../components/RankBadge";
-import { title } from "./catalog";
 import { s } from "./styles";
+
+const title = (mode: string) => modes.find((m) => m.id === mode)?.name || mode;
 
 type Achievement = {
   key: string;
@@ -15,7 +19,11 @@ type Achievement = {
   unlocked: boolean;
 };
 type Profile = {
+  id: string;
+  avatar?:unknown;
   name: string;
+  weekly?: { name: string; current: number; target: number }[];
+  competitive?: { rank: string; rating: number; provisional: boolean } | null;
   level: number;
   xp: number;
   coins: number;
@@ -29,6 +37,7 @@ export default function PerfilTab({
   deleting,
   setDeleting,
   onSignOut,
+  onProfileUpdated,
   onDeleteAccount,
 }: {
   profile: Profile;
@@ -37,14 +46,55 @@ export default function PerfilTab({
   deleting: boolean;
   setDeleting: (v: boolean) => void;
   onSignOut: () => void;
+  onProfileUpdated:(profile:any)=>void;
   onDeleteAccount: () => void;
 }) {
+  const [older, setOlder] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [historyError, setHistoryError] = useState("");
+  const [hasMore, setHasMore] = useState(true);
+  const identity = useRef(profile.id);
+  identity.current = profile.id;
+  useEffect(() => {
+    setOlder([]);
+    setHasMore(true);
+    setHistoryError("");
+    setLoadingHistory(false);
+  }, [profile.id]);
+  const records = [
+    ...new Map([...history, ...older].map((h) => [h.id, h])).values(),
+  ].sort((a, b) => b.cursor - a.cursor);
+  const loadMore = async () => {
+    if (loadingHistory || !records.length) return;
+    const uid = profile.id,
+      request = captureSession();
+    setLoadingHistory(true);
+    setHistoryError("");
+    try {
+      const page = await request<any[]>(
+        `/v1/history?before=${records[records.length - 1].cursor}`,
+      );
+      if (identity.current !== uid) return;
+      setOlder((current) => [...current, ...page]);
+      setHasMore(page.length === 30);
+    } catch {
+      if (identity.current === uid)
+        setHistoryError("Não foi possível carregar. Tente novamente.");
+    } finally {
+      if (identity.current === uid) setLoadingHistory(false);
+    }
+  };
   return (
     <>
       <View style={s.between}>
         <Text style={s.hero}>{profile.name}</Text>
-        <RankBadge level={profile.level} />
+        <Text style={s.accent}>
+          {profile.competitive
+            ? `${profile.competitive.rank} · ${profile.competitive.rating}${profile.competitive.provisional ? " · colocação" : ""}`
+            : "Sem classificação"}
+        </Text>
       </View>
+      <CharacterEditor key={profile.id} uid={profile.id} avatar={profile.avatar} onSaved={onProfileUpdated}/>
       <Card>
         <Text style={s.heading}>Conexão e permissões</Text>
         <Text style={s.muted}>
@@ -52,14 +102,30 @@ export default function PerfilTab({
           autorização de rede é concedida na instalação.
         </Text>
         <Text style={s.muted}>
-          Os jogos de precisão, reflexo e memória não acessam câmera,
-          microfone, localização ou contatos. Compartilhar abre o menu do seu
-          aparelho.
+          Os jogos da Arena não acessam câmera, microfone, localização ou
+          contatos. Compartilhar abre o menu do seu aparelho.
         </Text>
       </Card>
       <Text style={s.muted}>
-        Nível {profile.level} · {profile.xp} XP · {profile.coins} moedas
+        Nível de experiência {profile.level} · {profile.xp} XP · {profile.coins}{" "}
+        moedas
       </Text>
+      <Card>
+        <Text style={s.heading}>Objetivos da semana</Text>
+        <Text style={s.muted}>
+          Opcionais. Renovam na segunda-feira às 00h UTC.
+        </Text>
+        {profile.weekly?.map((m) => (
+          <Text key={m.name} style={s.muted}>
+            {m.current >= m.target ? "✓" : "○"} {m.name} · {m.current}/
+            {m.target}
+          </Text>
+        ))}
+        {!!profile.weekly?.length &&
+          profile.weekly.every((m) => m.current === m.target) && (
+            <Text style={s.accent}>🏅 Rival da semana</Text>
+          )}
+      </Card>
       <Text style={s.heading}>Conquistas</Text>
       <View style={s.achievementGrid}>
         {profile.achievements.map((achievement) =>
@@ -74,7 +140,10 @@ export default function PerfilTab({
               <Text style={s.achievementDesc}>{achievement.description}</Text>
             </Card>
           ) : (
-            <View key={achievement.key} style={[s.achievement, s.achievementLocked]}>
+            <View
+              key={achievement.key}
+              style={[s.achievement, s.achievementLocked]}
+            >
               <Text style={s.achievementIcon}>🔒</Text>
               <Text style={s.achievementName}>{achievement.name}</Text>
               <Text style={s.achievementDesc}>{achievement.description}</Text>
@@ -82,23 +151,50 @@ export default function PerfilTab({
           ),
         )}
       </View>
-      <Text style={s.heading}>Histórico recente</Text>
+      <Text style={s.heading}>Histórico de provas</Text>
       {history.length === 0 && (
-        <Text style={s.muted}>Jogue uma partida para começar.</Text>
+        <Text style={s.muted}>Jogue uma sala na Arena para começar.</Text>
       )}
-      {history.map((h) => (
+      {records.map((h) => (
         <Card key={h.id}>
           <Text style={s.heading}>
-            {title(h.config.game)} · {h.config.difficulty}
+            {title(h.mode)} · nível {h.difficulty}
           </Text>
           <Text style={s.muted}>
-            {h.score} pontos · +{h.xp} XP
+            {h.score} pontos · {h.ranked ? "Competitivo" : "Casual"} · prova{" "}
+            {h.game_index + 1}
           </Text>
+          <Text style={s.muted}>
+            {new Date(h.finished).toLocaleString("pt-BR")} ·{" "}
+            {
+              (
+                {
+                  win: "Vitória",
+                  loss: "Derrota",
+                  draw: "Empate",
+                  void: "Sem pontuação",
+                } as Record<string, string>
+              )[h.outcome]
+            }
+          </Text>
+          {h.details?.map((detail: string, index: number) => (
+            <Text key={index} style={s.muted}>
+              {detail}
+            </Text>
+          ))}
         </Card>
       ))}
+      {!!historyError && <Text style={s.error}>{historyError}</Text>}
+      {hasMore && history.length === 30 && (
+        <Button secondary disabled={loadingHistory} onPress={loadMore}>
+          {loadingHistory
+            ? "Carregando histórico…"
+            : "Carregar histórico anterior"}
+        </Button>
+      )}
       <Text style={s.muted}>
         Moedas ainda não têm loja ou valor monetário. Apagar a conta remove
-        também os duelos que você criou.
+        também suas salas e resultados na Arena.
       </Text>
       <Button disabled={busy} onPress={onSignOut}>
         Sair deste aparelho

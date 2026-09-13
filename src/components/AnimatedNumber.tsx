@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Animated } from "react-native";
 
+import useReducedMotion from "../useReducedMotion";
+
 // Counts up to `value` with an ease-out curve and a small entrance bounce.
 export default function AnimatedNumber({
   value,
@@ -9,9 +11,16 @@ export default function AnimatedNumber({
   value: number;
   style?: any;
 }) {
+  const reducedMotion = useReducedMotion();
   const [shown, setShown] = useState(0);
   const scale = useRef(new Animated.Value(0.7)).current;
   useEffect(() => {
+    if (reducedMotion) {
+      scale.stopAnimation();
+      scale.setValue(1);
+      setShown(value);
+      return;
+    }
     Animated.spring(scale, {
       toValue: 1,
       useNativeDriver: true,
@@ -27,8 +36,11 @@ export default function AnimatedNumber({
       if (t < 1) raf = requestAnimationFrame(tick);
     };
     tick();
-    return () => cancelAnimationFrame(raf);
-  }, [value]);
+    return () => {
+      cancelAnimationFrame(raf);
+      scale.stopAnimation();
+    };
+  }, [value, reducedMotion]);
   return (
     <Animated.Text style={[style, { transform: [{ scale }] }]}>
       {shown}

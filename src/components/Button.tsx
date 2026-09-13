@@ -25,7 +25,7 @@ export default function Button({
       style={disabled ? { opacity: 0.45 } : undefined}
     >
       <LinearGradient
-        colors={secondary ? ["#F0F2FA", "#E5E8F3"] : gradients.primaryButton}
+        colors={secondary ? [palette.surfaceAlt, palette.surfaceAlt] : gradients.primaryButton}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={[s.button, secondary && s.secondary]}

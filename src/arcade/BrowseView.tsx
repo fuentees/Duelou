@@ -1,19 +1,29 @@
-import React from "react";
-import { Pressable, Text, TextInput, View } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
+import React, { useEffect, useState } from "react";
 import {
-  ArcadeMode,
+  BackHandler,
+  Platform,
+  Text,
+  TextInput,
+  View,
+  StyleSheet,
+} from "react-native";
+import {
   modes,
-  levels,
-  levelRules,
-  levelDetails,
+  ArcadeMode,
   MAX_LEVEL,
+  levelDetails,
 } from "../../shared/arcade.mjs";
-import { contrastText, gameColors, medal, palette } from "../theme";
+import { palette } from "../theme";
 import Button from "../components/Button";
-import Card from "../components/Card";
 import Pressy from "../components/Pressy";
-import { s } from "./styles";
+import GameGrid from "../components/GameGrid";
+import {
+  CampaignProgress,
+  chapterFor,
+  starsFor,
+  campaignGoals,
+} from "../../shared/progression.mjs";
+import SegmentedControl from "../components/SegmentedControl";
 
 type Stats = {
   played: number;
@@ -23,46 +33,33 @@ type Stats = {
   level: number;
 };
 type Leader = Stats & { id: string; name: string };
-
-export default function BrowseView({
-  player,
-  stats,
-  leaders,
-  rooms,
-  connected,
-  busy,
-  tab,
-  setTab,
-  mode,
-  setMode,
-  format,
-  setFormat,
-  level,
-  capacity,
-  setCapacity,
-  code,
-  setCode,
-  onFindOpponent,
-  onCreateRoom,
-  onJoin,
-  onPlayOffline,
-  onLogin,
-  onBack,
-  onClearError,
-}: {
+type PlayTab = "online" | "friends" | "offline";
+type Props = {
+  campaign: CampaignProgress;
+  campaignReady: boolean;
+  syncEnabled: boolean;
+  syncBusy: boolean;
+  syncStatus: string;
+  onToggleSync: () => void;
+  onRetrySync: () => void;
+  soloKind: "campaign" | "training" | "daily";
+  setSoloKind: (kind: "campaign" | "training" | "daily") => void;
+  onCompetitive: () => void;
+  onDaily: () => void;
+  difficulty: number;
+  setDifficulty: (level: number) => void;
   player: { id: string; name: string } | null;
   stats: Stats | null;
   leaders: Leader[];
   rooms: any[];
   connected: boolean;
   busy: boolean;
-  tab: "online" | "friends" | "offline";
-  setTab: (tab: "online" | "friends" | "offline") => void;
+  tab: PlayTab;
+  setTab: (tab: PlayTab) => void;
   mode: ArcadeMode;
   setMode: (mode: ArcadeMode) => void;
   format: "md1" | "md3";
   setFormat: (format: "md1" | "md3") => void;
-  level: number;
   capacity: number;
   setCapacity: (n: number) => void;
   code: string;
@@ -72,319 +69,385 @@ export default function BrowseView({
   onJoin: (code: string) => void;
   onPlayOffline: () => void;
   onLogin: () => void;
-  onBack: () => void;
   onClearError: () => void;
-}) {
-  const accent = gameColors[mode] || gameColors.math;
+};
+
+export default function BrowseView(p: Props) {
+  const [step, setStep] = useState("home");
+  const games = modes.map((g) => ({
+    id: g.id,
+    name: g.name,
+    desc: g.description,
+    symbol: g.symbol,
+  }));
+  const selected = games.find((g) => g.id === p.mode)!;
+  const choose = (id: string) => {
+    p.setMode(id as ArcadeMode);
+    p.setDifficulty(1);
+    p.onClearError();
+    setStep("mode");
+  };
+  const back = () =>
+    setStep(
+      step === "mode"
+        ? "home"
+        : step === "difficulty" || step === "online"
+          ? "mode"
+          : "online",
+    );
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (step === "home") return false;
+      back();
+      return true;
+    });
+    return () => sub.remove();
+  }, [step]);
+  const solo = (kind: "campaign" | "training") => {
+    p.setTab("offline");
+    p.setSoloKind(kind);
+    p.setDifficulty(kind === "campaign" ? p.campaign.unlocked : 1);
+    setStep("difficulty");
+  };
   return (
-    <>
-      <Text style={s.eyebrow}>PARTIDAS CURTAS. BOAS DISPUTAS.</Text>
-      <Text style={s.hero}>Bora jogar?</Text>
-      <Text style={s.body}>
-        Encontre companhia, chame a turma ou curta uma partida só sua.
-      </Text>
-      {player && stats && stats.played > 0 && (
-        <Card
-          accessible
-          accessibilityLabel={`Suas estatísticas: ${stats.played} partidas, ${stats.wins} vitórias, melhor ${stats.best}, média ${stats.average}`}
-          style={s.stats}
-        >
-          <View>
-            <Text style={s.statValue}>{stats.played}</Text>
-            <Text style={s.caption}>partidas</Text>
-          </View>
-          <View>
-            <Text style={[s.statValue, { color: palette.gold }]}>
-              {stats.wins}
-            </Text>
-            <Text style={s.caption}>vitórias</Text>
-          </View>
-          <View>
-            <Text style={s.statValue}>{stats.best}</Text>
-            <Text style={s.caption}>melhor</Text>
-          </View>
-          <View>
-            <Text style={s.statValue}>{stats.average}</Text>
-            <Text style={s.caption}>média</Text>
-          </View>
-        </Card>
+    <View style={v.page}>
+      {step !== "home" && (
+        <Pressy onPress={back}>
+          <Text style={v.back}>← Voltar</Text>
+        </Pressy>
       )}
-      <View style={s.tabs}>
-        {[
-          ["online", "Online"],
-          ["friends", "Com amigos"],
-          ["offline", "Offline"],
-        ].map(([id, label]) => (
-          <Pressable
-            key={id}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: tab === id }}
-            onPress={() => {
-              setTab(id as typeof tab);
-              onClearError();
-            }}
-            style={[s.tab, tab === id && s.tabActive]}
-          >
-            <Text style={[s.tabText, tab === id && s.tabTextActive]}>
-              {label}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-      <View
-        accessible
-        accessibilityLabel={`${levels[level - 1]} de ${MAX_LEVEL}${tab === "offline" ? ", progresso salvo neste aparelho" : ""}`}
-        style={s.levelBadge}
-      >
-        <Text style={s.levelBadgeLabel}>
-          {tab === "offline" ? "SEU NÍVEL NESTE APARELHO" : "SEU NÍVEL"}
-        </Text>
-        <Text style={[s.levelBadgeValue, { color: accent[0] }]}>
-          {levels[level - 1]}{" "}
-          <Text style={s.levelBadgeMax}>/ {MAX_LEVEL}</Text>
-        </Text>
-        <Text style={s.caption}>
-          Sobe sozinho quando você faz uma boa pontuação na fase atual.
-        </Text>
-      </View>
-      <Text style={s.body}>{levelDetails[mode]}</Text>
-      <View style={[s.levelMeta, { borderColor: accent[0] + "55" }]}>
-        <Text style={[s.levelMetaText, { color: accent[0] }]}>
-          {levelRules[level - 1].rounds} rodadas ·{" "}
-          {levelRules[level - 1].seconds}s · até 1.000 pontos
-        </Text>
-      </View>
-      <View style={s.row}>
-        <Text style={s.section}>Escolha sua prova</Text>
-        <Text style={s.caption}>{modes.length} jogos disponíveis</Text>
-      </View>
-      {modes.map((m) => {
-        const c = gameColors[m.id] || gameColors.math;
-        const active = mode === m.id;
-        return (
-          <Pressy
-            key={m.id}
-            accessibilityRole="radio"
-            accessibilityState={{ checked: active }}
-            accessibilityLabel={m.name}
-            onPress={() => setMode(m.id)}
-            style={[s.game, active && { borderColor: c[0] }]}
-          >
-            <LinearGradient
-              colors={c}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={s.symbol}
-            >
-              <Text style={[s.symbolText, { color: contrastText(c[0]) }]}>
-                {m.symbol}
-              </Text>
-            </LinearGradient>
-            <View style={{ flex: 1, gap: 5 }}>
-              <Text style={[s.eyebrow, { color: c[0] }]}>{m.tag}</Text>
-              <Text style={s.member}>{m.name}</Text>
-              <Text style={s.caption}>{m.description}</Text>
-            </View>
-            <View
-              style={[
-                s.radioDot,
-                active && { backgroundColor: c[0], borderColor: c[0] },
-              ]}
-            />
-          </Pressy>
-        );
-      })}
-      {tab === "offline" ? (
-        <Card>
-          <Text style={s.section}>Só você e a próxima rodada.</Text>
-          <Text style={s.body}>
-            Sem conta, sem conexão, sem espera. O resultado fica nesta partida
-            e não entra no ranking online.
+      {step === "home" ? (
+        <>
+          <Text style={v.title}>Arena</Text>
+          {p.code.length === 8 && (
+            <Button secondary onPress={() => p.onJoin(p.code)}>
+              Entrar no convite {p.code}
+            </Button>
+          )}
+          <Text style={v.description}>
+            Aprenda sozinho. Desafie a turma. Conquiste sua patente.
           </Text>
-          <Button accessibilityLabel="Jogar offline" onPress={onPlayOffline}>
-            Jogar offline
+          <Button disabled={p.busy} onPress={p.onCompetitive}>
+            Jogar competitivo
           </Button>
-        </Card>
+          <Text style={v.description}>
+            Fila única 1 × 1 · melhor de 3 · jogo em rotação · classificação por
+            habilidade. Cinco séries iniciais de colocação. Até cinco séries por
+            rival por dia alteram sua classificação.
+          </Text>
+          <Button secondary onPress={p.onDaily}>
+            Desafio do dia
+          </Button>
+          <Text style={v.heading}>
+            Campanha, treino e amigos · {games.length} jogos
+          </Text>
+          <GameGrid games={games} onChoose={choose} />
+        </>
       ) : (
         <>
-          {!player && (
-            <Card>
-              <Text style={s.body}>
-                Entre com seu jogador para encontrar pessoas e participar de
-                salas.
+          <Text style={v.title}>{selected.name}</Text>
+          {step === "mode" ? (
+            <>
+              <Text style={v.description}>Como você quer jogar?</Text>
+              <Button
+                disabled={!p.campaignReady}
+                onPress={() => solo("campaign")}
+              >
+                Jogar sozinho
+              </Button>
+              <Text style={v.description}>
+                Campanha · 30 fases · progresso salvo neste aparelho, mesmo sem
+                conta. Fase atual: {p.campaign.unlocked}.
+              </Text>
+              <Text style={v.description}>{p.syncStatus}</Text>
+              <Text style={v.description}>
+                Sincronização opcional: une as melhores fases deste aparelho com
+                sua conta, sem alterar a classificação.
+              </Text>
+              <Button secondary disabled={p.syncBusy} onPress={p.onToggleSync}>
+                {!p.player
+                  ? "Entrar para sincronizar"
+                  : p.syncEnabled
+                    ? "Desativar sincronização"
+                    : "Ativar sincronização"}
+              </Button>
+              {p.syncEnabled && (
+                <Button secondary disabled={p.syncBusy} onPress={p.onRetrySync}>
+                  Sincronizar agora
+                </Button>
+              )}
+              <Button secondary onPress={() => solo("training")}>
+                Treino livre
+              </Button>
+              <Text style={v.description}>
+                Escolha qualquer nível. Pratique sem afetar campanha ou patente.
               </Text>
               <Button
-                accessibilityLabel="Entrar para jogar online"
-                onPress={onLogin}
+                secondary
+                onPress={() => {
+                  p.setTab("online");
+                  setStep("online");
+                }}
               >
-                Entrar para jogar online
+                Multijogador
               </Button>
-            </Card>
-          )}
-          <Card>
-            <Text style={s.section}>Melhor de quantas provas?</Text>
-            <Text style={s.caption}>
-              {format === "md3"
-                ? "Quem vencer 2 de 3 provas leva a sala."
-                : "Uma prova decide — mais rápido pra jogar de novo."}
-            </Text>
-            <View style={s.row}>
-              <Button
-                secondary={format !== "md1"}
-                accessibilityLabel="Melhor de 1"
-                onPress={() => setFormat("md1")}
-              >
-                Melhor de 1
+            </>
+          ) : step === "difficulty" ? (
+            <>
+              <Text style={v.heading}>
+                {p.soloKind === "campaign"
+                  ? "Sua campanha"
+                  : "Escolha a dificuldade"}
+              </Text>
+              <Text style={v.description}>{levelDetails[p.mode]}</Text>
+              <Text style={v.description}>
+                {p.soloKind === "campaign"
+                  ? `★ Concluir · ★★ ${campaignGoals(p.mode, p.difficulty).clear} pontos libera a próxima fase · ★★★ ${campaignGoals(p.mode, p.difficulty).excellent} pontos. Estrelas ficam salvas por fase.`
+                  : "Todos os níveis liberados para praticar. O treino não altera seu progresso."}
+              </Text>
+              <Button disabled={!p.campaignReady} onPress={p.onPlayOffline}>
+                Jogar fase {p.difficulty}
               </Button>
-              <Button
-                secondary={format !== "md3"}
-                accessibilityLabel="Melhor de 3"
-                onPress={() => setFormat("md3")}
-              >
-                Melhor de 3
-              </Button>
-            </View>
-          </Card>
-          {tab === "online" && (
-            <Button
-              disabled={busy}
-              accessibilityLabel="Encontrar adversário"
-              onPress={onFindOpponent}
-            >
-              Encontrar adversário
-            </Button>
-          )}
-          <Card>
-            <Text style={s.section}>
-              {tab === "online"
-                ? "Abra uma sala pública"
-                : "Uma sala para sua turma"}
-            </Text>
-            <Text style={s.caption}>
-              {tab === "online"
-                ? "Outros jogadores poderão encontrar sua sala."
-                : "Somente quem receber o código pode entrar."}
-            </Text>
-            <View style={s.row}>
-              {[2, 4, 6].map((n) => (
-                <Button
-                  key={n}
-                  secondary={n !== capacity}
-                  accessibilityLabel={`${n} pessoas`}
-                  onPress={() => setCapacity(n)}
-                >
-                  {n} pessoas
-                </Button>
+              <Text style={v.description}>
+                {Object.entries(p.campaign.best).reduce(
+                  (sum, [level, score]) =>
+                    sum + starsFor(score, p.mode, Number(level)),
+                  0,
+                )}{" "}
+                / 90 estrelas neste jogo
+              </Text>
+              {[0, 1, 2, 3, 4, 5].map((ch) => (
+                <View key={ch} style={{ gap: 10 }}>
+                  <Text style={v.heading}>
+                    {ch + 1}. {chapterFor(p.mode, ch * 5 + 1).name}
+                  </Text>
+                  <Text style={v.description}>
+                    {chapterFor(p.mode, ch * 5 + 1).lesson}
+                  </Text>
+                  <View
+                    style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}
+                  >
+                    {Array.from({ length: 5 }, (_, i) => ch * 5 + i + 1).map(
+                      (n) => {
+                        const locked =
+                          p.soloKind === "campaign" && n > p.campaign.unlocked;
+                        return (
+                          <Pressy
+                            key={n}
+                            disabled={locked}
+                            accessibilityLabel={
+                              locked ? `Nível ${n}, trancado` : `Nível ${n}`
+                            }
+                            accessibilityState={{
+                              selected: n === p.difficulty,
+                              disabled: locked,
+                            }}
+                            onPress={() => p.setDifficulty(n)}
+                            style={{
+                              padding: 10,
+                              minWidth: 48,
+                              borderRadius: 8,
+                              backgroundColor:
+                                n === p.difficulty
+                                  ? "#246DF0"
+                                  : palette.surface,
+                              opacity: locked ? 0.4 : 1,
+                            }}
+                          >
+                            <Text
+                              style={{
+                                color:
+                                  n === p.difficulty ? "#FFFFFF" : palette.text,
+                                fontWeight: "800",
+                              }}
+                            >
+                              {locked ? "🔒" : n}
+                            </Text>
+                            <Text
+                              style={{
+                                color:
+                                  n === p.difficulty ? "#FFFFFF" : palette.text,
+                                fontSize: 10,
+                              }}
+                            >
+                              {"★".repeat(
+                                starsFor(p.campaign.best[n] || 0, p.mode, n),
+                              ) || "☆"}
+                            </Text>
+                          </Pressy>
+                        );
+                      },
+                    )}
+                  </View>
+                </View>
               ))}
-            </View>
-            <Button
-              disabled={busy}
-              accessibilityLabel={
-                tab === "online" ? "Criar sala pública" : "Criar sala privada"
-              }
-              onPress={onCreateRoom}
-            >
-              {tab === "online" ? "Criar sala pública" : "Criar sala privada"}
-            </Button>
-          </Card>
-          {tab === "friends" ? (
-            <Card>
-              <Text style={s.section}>Recebeu um convite?</Text>
+              <Text style={v.description}>
+                Fase {p.difficulty}:{" "}
+                {chapterFor(p.mode, p.difficulty).mastery
+                  ? "Prova de domínio — "
+                  : ""}
+                {chapterFor(p.mode, p.difficulty).lesson}
+              </Text>
+              <Button disabled={!p.campaignReady} onPress={p.onPlayOffline}>
+                Continuar
+              </Button>
+            </>
+          ) : !p.player ? (
+            <Button onPress={p.onLogin}>Entrar para jogar online</Button>
+          ) : step === "online" ? (
+            <>
+              <Text style={v.description}>
+                Salas casuais. Resultados não alteram sua classificação
+                competitiva.
+              </Text>
+              <Button disabled={p.busy} onPress={p.onFindOpponent}>
+                Encontrar partida
+              </Button>
+              <Button secondary onPress={() => setStep("join")}>
+                Entrar em uma sala
+              </Button>
+              <Button secondary onPress={() => setStep("create")}>
+                Criar sala
+              </Button>
+            </>
+          ) : step === "create" ? (
+            <>
+              <Text style={v.heading}>Criar sala</Text>
+              <SegmentedControl
+                value={p.tab === "friends" ? "friends" : "online"}
+                onChange={p.setTab}
+                items={[
+                  { id: "online", label: "Pública" },
+                  { id: "friends", label: "Só por convite" },
+                ]}
+              />
+              <Text style={v.description}>
+                Nível da sala: {p.difficulty}. Mesma prova para todos.
+              </Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                {Array.from({ length: 30 }, (_, i) => i + 1).map((n) => (
+                  <Pressy
+                    key={n}
+                    accessibilityLabel={`Nível ${n}`}
+                    onPress={() => p.setDifficulty(n)}
+                    style={{
+                      padding: 12,
+                      backgroundColor:
+                        n === p.difficulty ? "#246DF0" : palette.surface,
+                    }}
+                  >
+                    <Text style={{ color: palette.text }}>{n}</Text>
+                  </Pressy>
+                ))}
+              </View>
+              <SegmentedControl
+                value={p.format}
+                onChange={p.setFormat}
+                items={[
+                  { id: "md1", label: "Melhor de 1" },
+                  { id: "md3", label: "Melhor de 3" },
+                ]}
+              />
+              <SegmentedControl
+                value={String(p.capacity)}
+                onChange={(n) => p.setCapacity(Number(n))}
+                items={[
+                  { id: "2", label: "2 pessoas" },
+                  { id: "4", label: "4 pessoas" },
+                  { id: "6", label: "6 pessoas" },
+                ]}
+              />
+              <Text style={v.description}>
+                Até três provas. Empate em vitórias termina empatado.
+              </Text>
+              <Button disabled={p.busy} onPress={p.onCreateRoom}>
+                Criar e entrar
+              </Button>
+            </>
+          ) : (
+            <>
+              <Text style={v.heading}>Entrar em uma sala</Text>
               <TextInput
-                style={s.input}
                 accessibilityLabel="Código da sala"
                 placeholder="Código de 8 caracteres"
-                placeholderTextColor={palette.textFaint}
-                autoCapitalize="characters"
+                value={p.code}
+                onChangeText={p.setCode}
                 maxLength={8}
-                value={code}
-                onChangeText={setCode}
+                autoCapitalize="characters"
+                style={v.input}
               />
               <Button
-                secondary
-                disabled={busy || code.trim().length !== 8}
-                accessibilityLabel="Entrar pelo código"
-                onPress={() => onJoin(code)}
+                disabled={p.busy || p.code.trim().length !== 8}
+                onPress={() => p.onJoin(p.code)}
               >
                 Entrar pelo código
               </Button>
-            </Card>
-          ) : (
-            <>
-              <View style={s.row}>
-                <Text style={s.section}>Salas abertas</Text>
-                <Text style={s.caption}>
-                  {player
-                    ? connected
-                      ? "Atualização automática"
-                      : "Conectando…"
-                    : "Entre para consultar"}
-                </Text>
-              </View>
-              {player && rooms.length === 0 && (
-                <Text style={s.body}>
-                  Nenhuma sala disponível agora. Abra a primeira ou use a
-                  busca de adversário.
+              <Text style={v.heading}>Partidas abertas</Text>
+              {!p.rooms.filter((r) => r.mode === p.mode).length && (
+                <Text style={v.description}>
+                  Nenhuma sala deste jogo disponível agora. Você pode jogar a
+                  campanha enquanto isso.
                 </Text>
               )}
-              {rooms.map((r) => (
-                <Card key={r.code}>
-                  <Text style={s.member}>
-                    {modes.find((m) => m.id === r.mode)?.name}
-                  </Text>
-                  <Text style={s.caption}>
-                    {levels[(r.difficulty || 1) - 1]} ·{" "}
-                    {r.format === "md3" ? "Melhor de 3" : "Melhor de 1"} ·{" "}
-                    {r.count}/{r.capacity} jogadores · {r.code}
-                  </Text>
+              {p.rooms
+                .filter((r) => r.mode === p.mode)
+                .map((r) => (
                   <Button
+                    key={r.code}
                     secondary
-                    disabled={busy}
-                    accessibilityLabel={`Entrar na sala ${r.code}`}
-                    onPress={() => onJoin(r.code)}
+                    onPress={() => p.onJoin(r.code)}
                   >
-                    Entrar na sala {r.code}
+                    {r.code} · {r.count}/{r.capacity} jogadores
                   </Button>
-                </Card>
-              ))}
-              {player && (
-                <Card
-                  accessible
-                  accessibilityLabel={`Ranking Arcade com ${leaders.length} jogadores`}
-                >
-                  <View style={s.row}>
-                    <Text style={s.section}>Ranking Arcade</Text>
-                    <Text style={s.caption}>mais vitórias</Text>
-                  </View>
-                  {leaders.length ? (
-                    leaders.slice(0, 5).map((leader, index) => (
-                      <View key={leader.id} style={s.row}>
-                        <Text style={s.member}>
-                          {medal(index) || `${index + 1}.`} {leader.name}
-                        </Text>
-                        <Text style={s.caption}>
-                          {leader.wins} vit. · melhor {leader.best}
-                        </Text>
-                      </View>
-                    ))
-                  ) : (
-                    <Text style={s.body}>
-                      O primeiro vencedor estreia este ranking.
-                    </Text>
-                  )}
-                </Card>
-              )}
+                ))}
             </>
           )}
         </>
       )}
-      <Button
-        secondary
-        accessibilityLabel="Jogos clássicos, perfil e conquistas"
-        onPress={onBack}
-      >
-        Jogos clássicos, perfil e conquistas
-      </Button>
-    </>
+    </View>
   );
 }
+const v = StyleSheet.create({
+  page: { gap: 20 },
+  title: {
+    fontSize: 34,
+    fontWeight: "800",
+    color: palette.text,
+    letterSpacing: -1,
+  },
+  heading: {
+    fontSize: 19,
+    fontWeight: "700",
+    color: palette.text,
+    marginTop: 12,
+  },
+  count: { color: palette.textFaint, fontSize: 13 },
+  description: { fontSize: 14, lineHeight: 21, color: palette.textDim },
+  back: { fontSize: 14, color: palette.textDim, paddingVertical: 10 },
+  game: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 16,
+    paddingVertical: 17,
+    borderBottomWidth: 1,
+    borderColor: palette.border,
+  },
+  gameText: { flex: 1, gap: 5 },
+  number: {
+    width: 28,
+    fontSize: 17,
+    fontWeight: "600",
+    color: palette.textFaint,
+  },
+  name: { fontSize: 17, fontWeight: "700", color: palette.text },
+  arrow: { fontSize: 20, color: palette.textDim },
+  input: {
+    padding: 16,
+    borderWidth: 1,
+    borderColor: palette.border,
+    fontSize: 17,
+    color: palette.text,
+    borderRadius: 6,
+  },
+});
