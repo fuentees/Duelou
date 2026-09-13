@@ -12,6 +12,7 @@ import {
 import { ArenaChallenge, nextChallenge, resetChallengeSequence } from "./challenges";
 import ChallengePanel from "./ChallengePanel";
 import Troop from "./Troop";
+import ResultCard from "./ResultCard";
 import { ENEMY_COLOR, PLAYER_COLOR } from "./colors";
 import type { BotDifficulty } from "./bot";
 import { createBotState, stepBot } from "./bot";
@@ -40,9 +41,13 @@ type Poof = { key: number; position: number; side: Side };
 
 export default function ArenaScreen({
   difficulty = "medium",
+  onExit,
 }: {
   // Ticket 9 usa "easy" na primeira partida do onboarding.
   difficulty?: BotDifficulty;
+  // Sem isso (antes do Ticket 9 ligar a navegação de verdade), "Menu" só
+  // volta pra tela inicial da própria Arena.
+  onExit?: () => void;
 }) {
   const [screen, setScreen] = useState<Screen>("start");
   const screenRef = useRef<Screen>("start");
@@ -81,6 +86,11 @@ export default function ArenaScreen({
   // evento troopDied não carrega posição (já foi removida do estado), então
   // é daqui que tiramos "mais ou menos onde" pra colocar o poof.
   const lastPositions = useRef<Map<number, { position: number; side: Side }>>(new Map());
+  // Se a própria base chegou a ficar crítica em algum momento e ainda assim
+  // a partida foi vencida — vira o destaque "virou nos últimos segundos" no
+  // cartão de resultado (Ticket 8).
+  const wasCriticalRef = useRef(false);
+  const [shareError, setShareError] = useState("");
 
   const queueNextChallenge = () => {
     const state = arenaRef.current;
@@ -104,6 +114,7 @@ export default function ArenaScreen({
       playFail();
     } else {
       state.combo++;
+      state.stats.maxCombo = Math.max(state.stats.maxCombo, state.combo);
       const fast = kind === "reflex" ? elapsedMs < FAST_REFLEX_MS : elapsedMs < FAST_CHOICE_MS;
       const troopType: TroopType =
         fast && state.combo >= 3 ? "tank" : fast || state.combo >= 3 ? "soldier" : "scout";
@@ -165,6 +176,7 @@ export default function ArenaScreen({
         ]).start();
       }
     }
+    if (state.playerBaseHp < DANGER_THRESHOLD) wasCriticalRef.current = true;
     rerender();
     if (events.some((e) => e.type === "matchOver")) {
       setScreenState("end");
@@ -208,10 +220,17 @@ export default function ArenaScreen({
     setPoofs([]);
     setBaseFlash({ player: false, enemy: false });
     shakeX.setValue(0);
+    wasCriticalRef.current = false;
+    setShareError("");
     resetChallengeSequence();
     setChallenge(nextChallenge(random, 0));
     setChallengeSeq((n) => n + 1);
     setScreenState("playing");
+  };
+
+  const handleMenu = () => {
+    if (onExit) onExit();
+    else setScreenState("start");
   };
 
   // Nenhum desafio pendente deveria resolver sozinho depois que a tela sai
@@ -310,17 +329,18 @@ export default function ArenaScreen({
         </Animated.View>
       ) : (
         <View style={s.center}>
-          <Text style={s.title}>
-            {state.winner === "player"
-              ? "Você venceu!"
-              : state.winner === "enemy"
-                ? "Você perdeu"
-                : "Empate"}
-          </Text>
-          <Text style={s.body}>
-            Sua base: {Math.round(state.playerBaseHp)} · Base inimiga: {Math.round(state.enemyBaseHp)}
-          </Text>
-          <Button onPress={startMatch}>Jogar de novo</Button>
+          {!!shareError && (
+            <Text accessibilityRole="alert" style={s.shareError}>
+              {shareError}
+            </Text>
+          )}
+          <ResultCard
+            state={state}
+            comeback={state.winner === "player" && wasCriticalRef.current}
+            onRematch={startMatch}
+            onMenu={handleMenu}
+            onError={setShareError}
+          />
         </View>
       )}
     </SafeAreaView>
@@ -383,6 +403,7 @@ const s = StyleSheet.create({
   healthFill: { height: 14 },
   healthFlash: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "#FFFFFFB0" },
   danger: { fontSize: 11, fontWeight: "900", color: palette.red },
+  shareError: { fontSize: 13, fontWeight: "700", color: palette.red, textAlign: "center" },
   frontLine: {
     position: "absolute",
     left: 0,

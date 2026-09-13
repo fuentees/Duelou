@@ -51,6 +51,10 @@ export type ArenaStats = {
   troopsSpawned: number;
   challengesTotal: number;
   hits: number;
+  // Maior combo alcançado na partida — quem atualiza é quem controla o
+  // combo (hoje, o painel de desafio em src/arena/), não o motor: combo é
+  // sobre acerto de desafio, não sobre nada que step() resolva sozinho.
+  maxCombo: number;
 };
 
 export type ArenaState = {
@@ -72,7 +76,7 @@ export function createArenaState(durationSeconds = 100): ArenaState {
     enemyBaseHp: 100,
     troops: [],
     combo: 0,
-    stats: { troopsSpawned: 0, challengesTotal: 0, hits: 0 },
+    stats: { troopsSpawned: 0, challengesTotal: 0, hits: 0, maxCombo: 0 },
     over: false,
     winner: null,
     nextTroopId: 1,
