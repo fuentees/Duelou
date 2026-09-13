@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { AppState, StyleSheet, Text, View } from "react-native";
+import { Animated, AppState, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   ArenaState,
@@ -16,6 +16,7 @@ import { ENEMY_COLOR, PLAYER_COLOR } from "./colors";
 import type { BotDifficulty } from "./bot";
 import { createBotState, stepBot } from "./bot";
 import { playFail, playSuccess } from "../audio/sounds";
+import useReducedMotion from "../useReducedMotion";
 import { palette, radius } from "../theme";
 import Button from "../components/Button";
 
@@ -30,6 +31,10 @@ const FAST_REFLEX_MS = 340;
 const NEXT_CHALLENGE_DELAY_MS = 280;
 // Quanto tempo o "poof" fica visível depois de uma tropa morrer.
 const POOF_DURATION_MS = 350;
+// Quanto tempo o flash branco fica na barra de vida atingida.
+const BASE_FLASH_MS = 220;
+// Abaixo disso (de 100), a base entra em "modo perigo" (cor de alerta).
+const DANGER_THRESHOLD = 25;
 
 type Poof = { key: number; position: number; side: Side };
 
@@ -63,9 +68,15 @@ export default function ArenaScreen({
   const [challengeSeq, setChallengeSeq] = useState(0);
   const nextChallengeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const reducedMotion = useReducedMotion();
   const [laneHeight, setLaneHeight] = useState(0);
   const [poofs, setPoofs] = useState<Poof[]>([]);
   const poofSeq = useRef(0);
+  const [baseFlash, setBaseFlash] = useState<{ player: boolean; enemy: boolean }>({
+    player: false,
+    enemy: false,
+  });
+  const shakeX = useRef(new Animated.Value(0)).current;
   // Guarda a posição de cada tropa no tick anterior — quando uma morre, o
   // evento troopDied não carrega posição (já foi removida do estado), então
   // é daqui que tiramos "mais ou menos onde" pra colocar o poof.
@@ -131,6 +142,29 @@ export default function ArenaScreen({
       });
     }
     lastPositions.current = new Map(state.troops.map((t) => [t.id, { position: t.position, side: t.side }]));
+
+    const baseHits = events.filter((e) => e.type === "baseHit") as Extract<
+      (typeof events)[number],
+      { type: "baseHit" }
+    >[];
+    if (baseHits.length) {
+      const hitPlayer = baseHits.some((e) => e.side === "player");
+      const hitEnemy = baseHits.some((e) => e.side === "enemy");
+      setBaseFlash({ player: hitPlayer, enemy: hitEnemy });
+      setTimeout(() => setBaseFlash({ player: false, enemy: false }), BASE_FLASH_MS);
+      // Som só pra quando é a SUA base — evita repetir o mesmo som de
+      // acerto/erro do painel de desafio com frequência demais.
+      if (hitPlayer) playFail();
+      if (!reducedMotion) {
+        shakeX.setValue(0);
+        Animated.sequence([
+          Animated.timing(shakeX, { toValue: 6, duration: 40, useNativeDriver: true }),
+          Animated.timing(shakeX, { toValue: -6, duration: 40, useNativeDriver: true }),
+          Animated.timing(shakeX, { toValue: 3, duration: 40, useNativeDriver: true }),
+          Animated.timing(shakeX, { toValue: 0, duration: 40, useNativeDriver: true }),
+        ]).start();
+      }
+    }
     rerender();
     if (events.some((e) => e.type === "matchOver")) {
       setScreenState("end");
@@ -172,6 +206,8 @@ export default function ArenaScreen({
     botRef.current = createBotState(difficulty);
     lastPositions.current = new Map();
     setPoofs([]);
+    setBaseFlash({ player: false, enemy: false });
+    shakeX.setValue(0);
     resetChallengeSequence();
     setChallenge(nextChallenge(random, 0));
     setChallengeSeq((n) => n + 1);
@@ -194,6 +230,16 @@ export default function ArenaScreen({
   }, [screen]);
 
   const state = arenaRef.current;
+  // Onde os dois exércitos se encontram — mesmo sem estarem literalmente
+  // trocando dano neste instante, dá pra ver pra onde a disputa está indo.
+  // null quando não há choque de verdade (times ainda distantes ou lado sem
+  // tropa nenhuma).
+  const playerFront = state.troops.reduce((m, t) => (t.side === "player" ? Math.max(m, t.position) : m), -1);
+  const enemyFront = state.troops.reduce((m, t) => (t.side === "enemy" ? Math.min(m, t.position) : m), 101);
+  const frontLine =
+    playerFront >= 0 && enemyFront <= 100 && enemyFront - playerFront <= 10
+      ? (playerFront + enemyFront) / 2
+      : null;
 
   return (
     <SafeAreaView style={s.screen}>
@@ -207,9 +253,21 @@ export default function ArenaScreen({
           <Button onPress={startMatch}>Entrar na Arena</Button>
         </View>
       ) : screen === "playing" ? (
-        <View style={s.match}>
-          <HealthBar label="BASE INIMIGA" hp={state.enemyBaseHp} color={ENEMY_COLOR} />
+        <Animated.View style={[s.match, { transform: [{ translateX: shakeX }] }]}>
+          <HealthBar
+            label="BASE INIMIGA"
+            hp={state.enemyBaseHp}
+            color={ENEMY_COLOR}
+            flash={baseFlash.enemy}
+            danger={state.enemyBaseHp < DANGER_THRESHOLD}
+          />
           <View style={s.lane} onLayout={(e) => setLaneHeight(e.nativeEvent.layout.height)}>
+            {frontLine !== null && (
+              <View
+                accessibilityElementsHidden
+                style={[s.frontLine, { top: laneHeight * (1 - frontLine / 100) - 1 }]}
+              />
+            )}
             {state.troops.map((troop) => (
               <Troop key={troop.id} troop={troop} laneHeight={laneHeight} />
             ))}
@@ -229,7 +287,13 @@ export default function ArenaScreen({
               </Text>
             ))}
           </View>
-          <HealthBar label="SUA BASE" hp={state.playerBaseHp} color={PLAYER_COLOR} />
+          <HealthBar
+            label="SUA BASE"
+            hp={state.playerBaseHp}
+            color={PLAYER_COLOR}
+            flash={baseFlash.player}
+            danger={state.playerBaseHp < DANGER_THRESHOLD}
+          />
           <View style={s.row}>
             <Text style={s.caption}>Tempo restante: {Math.ceil(state.timeRemaining)}s</Text>
             {state.combo >= 2 && (
@@ -243,7 +307,7 @@ export default function ArenaScreen({
               <ChallengePanel key={challengeSeq} challenge={challenge} onAnswer={handleAnswer} />
             )}
           </View>
-        </View>
+        </Animated.View>
       ) : (
         <View style={s.center}>
           <Text style={s.title}>
@@ -263,12 +327,39 @@ export default function ArenaScreen({
   );
 }
 
-function HealthBar({ label, hp, color }: { label: string; hp: number; color: string }) {
+function HealthBar({
+  label,
+  hp,
+  color,
+  flash = false,
+  danger = false,
+}: {
+  label: string;
+  hp: number;
+  color: string;
+  flash?: boolean;
+  danger?: boolean;
+}) {
   return (
     <View style={s.healthBlock} accessibilityLabel={`${label}: ${Math.round(hp)} de 100`}>
-      <Text style={s.caption}>{label}</Text>
+      <View style={s.row}>
+        <Text style={s.caption}>{label}</Text>
+        {danger && (
+          <Text style={s.danger} accessibilityLiveRegion="polite">
+            ⚠ CRÍTICO
+          </Text>
+        )}
+      </View>
       <View style={s.healthTrack}>
-        <View style={[s.healthFill, { width: `${Math.max(0, Math.min(100, hp))}%`, backgroundColor: color }]} />
+        <View
+          style={[
+            s.healthFill,
+            { width: `${Math.max(0, Math.min(100, hp))}%`, backgroundColor: danger ? palette.red : color },
+          ]}
+        />
+        {/* Flash branco por cima ao ser atingida — some sozinho logo em
+            seguida (ver BASE_FLASH_MS). */}
+        {flash && <View style={s.healthFlash} />}
       </View>
     </View>
   );
@@ -282,8 +373,24 @@ const s = StyleSheet.create({
   caption: { fontSize: 12, fontWeight: "700", color: palette.textFaint },
   match: { flex: 1, padding: 16, gap: 10 },
   healthBlock: { gap: 4 },
-  healthTrack: { height: 14, borderRadius: radius.sm, backgroundColor: palette.surfaceAlt, overflow: "hidden" },
+  healthTrack: {
+    height: 14,
+    borderRadius: radius.sm,
+    backgroundColor: palette.surfaceAlt,
+    overflow: "hidden",
+    position: "relative",
+  },
   healthFill: { height: 14 },
+  healthFlash: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "#FFFFFFB0" },
+  danger: { fontSize: 11, fontWeight: "900", color: palette.red },
+  frontLine: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    height: 2,
+    backgroundColor: palette.amber,
+    opacity: 0.6,
+  },
   lane: {
     flex: 1,
     backgroundColor: palette.surfaceAlt,

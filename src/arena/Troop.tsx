@@ -91,6 +91,29 @@ export default function Troop({
       >
         <Ionicons name={visual.icon} size={visual.size * 0.55} color="#FFFFFF" />
       </View>
+      {/* Barrinha de vida — sem isso, a troca de dano no combate é uma caixa
+          preta: dá pra ver o ícone perdendo cor, mas não "quanto falta". */}
+      {hpRatio < 1 && (
+        <View
+          style={{
+            position: "absolute",
+            bottom: -6,
+            width: visual.size,
+            height: 3,
+            borderRadius: 2,
+            backgroundColor: "#00000030",
+            overflow: "hidden",
+          }}
+        >
+          <View
+            style={{
+              width: `${hpRatio * 100}%`,
+              height: 3,
+              backgroundColor: hpRatio < 0.3 ? "#E11D48" : "#FFFFFF",
+            }}
+          />
+        </View>
+      )}
       {/* Seta de direção — reforça de que lado é cada tropa sem depender só
           da cor (útil pra quem não distingue bem azul de rosa). */}
       <Text
