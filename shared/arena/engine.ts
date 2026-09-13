@@ -218,3 +218,16 @@ export function step(
   }
   return events;
 }
+
+// Regra de invocação, compartilhada entre o cliente offline (contra bot) e o
+// futuro motor autoritativo do servidor (PvP) — os dois precisam decidir o
+// mesmo tipo de tropa a partir da mesma resposta rápida/combo, sem duplicar
+// (e arriscar divergir) a lógica em dois lugares.
+export const FAST_CHOICE_MS = 1500;
+export const FAST_REFLEX_MS = 340;
+
+// Acerto rápido OU combo >= 3 sai soldier; os dois juntos saem tank; acerto
+// normal sai scout.
+export function decideTroopType(fast: boolean, combo: number): TroopType {
+  return fast && combo >= 3 ? "tank" : fast || combo >= 3 ? "soldier" : "scout";
+}

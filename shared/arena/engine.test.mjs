@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   createArenaState,
+  decideTroopType,
   spawn,
   step,
   TROOP_CONFIG,
@@ -80,6 +81,21 @@ test("partida termina quando uma base zera", () => {
   const after = step(state, 1, noRandom);
   assert.deepEqual(after, []);
   assert.equal(state.enemyBaseHp, hpBefore);
+});
+
+test("decideTroopType: acerto normal (não rápido, combo baixo) sai scout", () => {
+  assert.equal(decideTroopType(false, 0), "scout");
+  assert.equal(decideTroopType(false, 2), "scout");
+});
+
+test("decideTroopType: rápido OU combo >= 3 (não os dois) sai soldier", () => {
+  assert.equal(decideTroopType(true, 0), "soldier");
+  assert.equal(decideTroopType(false, 3), "soldier");
+});
+
+test("decideTroopType: rápido E combo >= 3 sai tank", () => {
+  assert.equal(decideTroopType(true, 3), "tank");
+  assert.equal(decideTroopType(true, 5), "tank");
 });
 
 test("tropas do mesmo lado nunca se sobrepõem, mesmo em fila", () => {

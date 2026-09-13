@@ -3,9 +3,11 @@ import { Animated, AppState, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   ArenaState,
+  FAST_CHOICE_MS,
+  FAST_REFLEX_MS,
   Side,
-  TroopType,
   createArenaState,
+  decideTroopType,
   spawn,
   step,
 } from "../../shared/arena/engine";
@@ -24,10 +26,6 @@ import Button from "../components/Button";
 
 type Screen = "start" | "playing" | "end";
 const MATCH_SECONDS = 100;
-// Limiares de "resposta rápida" — abaixo disso, conta como rápido pra
-// efeito da regra de invocação (ver handleAnswer).
-const FAST_CHOICE_MS = 1500;
-const FAST_REFLEX_MS = 340;
 // Pequena pausa depois de responder, pra dar tempo de ver o feedback
 // certo/errado antes do próximo desafio aparecer.
 const NEXT_CHALLENGE_DELAY_MS = 280;
@@ -118,9 +116,10 @@ export default function ArenaScreen({
     }, NEXT_CHALLENGE_DELAY_MS);
   };
 
-  // Regra de invocação: acerto rápido OU combo >= 3 sai soldier; os dois
-  // juntos saem tank; acerto normal sai scout; erro não invoca nada e zera
-  // o combo.
+  // Regra de invocação (decideTroopType, em shared/arena/engine.ts): acerto
+  // rápido OU combo >= 3 sai soldier; os dois juntos saem tank; acerto normal
+  // sai scout; erro não invoca nada e zera o combo. Compartilhada com o
+  // futuro motor do servidor (PvP), pra não divergir do que sai aqui offline.
   const handleAnswer = (correct: boolean, elapsedMs: number) => {
     const state = arenaRef.current;
     const kind = challenge?.kind;
@@ -132,8 +131,7 @@ export default function ArenaScreen({
       state.combo++;
       state.stats.maxCombo = Math.max(state.stats.maxCombo, state.combo);
       const fast = kind === "reflex" ? elapsedMs < FAST_REFLEX_MS : elapsedMs < FAST_CHOICE_MS;
-      const troopType: TroopType =
-        fast && state.combo >= 3 ? "tank" : fast || state.combo >= 3 ? "soldier" : "scout";
+      const troopType = decideTroopType(fast, state.combo);
       spawn(state, "player", troopType);
       state.stats.hits++;
       playSuccess();

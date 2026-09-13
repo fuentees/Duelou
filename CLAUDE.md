@@ -8,6 +8,9 @@
 
 ## Arena Rush (novo modo, em construção por tickets)
 
-- Sendo construído em tickets sequenciais (ver histórico da conversa/commits). Fase 0 é **offline, contra bot** — não envolve servidor nem rede.
-- NÃO TOQUE, nesta fase, em: server/competitive.mjs, server/rooms.mjs, shared/competition.mjs, nem em nada de Elo/rating/anti-trapaça. O novo jogo é local e não deve influenciar classificação, XP competitivo ou o servidor.
-- Tempo real (fase 2, WebSocket + simulação autoritativa no servidor) é um épico à parte — não começar antes das fases 0 e 1 estarem prontas e testadas com gente de verdade.
+- Fase 0 (Tickets 1-9, offline contra bot) está pronta e commitada: `shared/arena/engine.ts`, `src/arena/*`. Não foi testada com gente de verdade antes de avançar — o usuário decidiu explicitamente pular esse gate e priorizar PvP direto (ver abaixo), então essa decisão já foi tomada conscientemente, não precisa ser revisitada.
+- **Decisão do usuário: PvP em tempo real é a prioridade agora**, substituindo o bot como ponto de entrada (não coexistem por escolha de tela). `ArenaScreen.tsx`/`bot.ts`/`src/arena/onboarding.ts` continuam no repo, testados, só deixam de ser alcançados pelo menu — não apagar.
+- Plano completo (Tickets 12-26: motor autoritativo no servidor, WebSocket, matchmaking FIFO próprio, anti-trapaça de desafios, etc.) está em `C:\Users\fuent\.claude\plans\drifting-frolicking-pixel.md`. Seguir na ordem, um commit por ticket.
+- NÃO TOQUE em: server/competitive.mjs, server/rooms.mjs, shared/competition.mjs, nem em nada de Elo/rating/anti-trapaça. Toda a infraestrutura nova do PvP (fila, partidas, desafios) vai em arquivos novos e independentes — nunca deve influenciar classificação, XP competitivo ou as tabelas/lógica desses arquivos.
+- Reconexão: desistência imediata quando alguém cai da partida (sem tolerância). Sem oponente na fila: só espera com botão cancelar, sem fallback pra bot.
+- Único pacote novo autorizado: `ws` (WebSocket no servidor), justificado no plano acima — não introduzir outras dependências sem avisar.
