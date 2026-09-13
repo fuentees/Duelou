@@ -3,6 +3,8 @@ import {
   mkdirSync,
   readdirSync,
   copyFileSync,
+  cpSync,
+  statSync,
   readFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -22,22 +24,25 @@ for (const line of readFileSync("server/Dockerfile", "utf8")
     destination.startsWith(root + "\\") || destination.startsWith(root + "/"),
   );
   for (const source of parts) {
-    const sources = source.includes("*")
-      ? readdirSync(source.split("/")[0])
-          .filter((name) => name.endsWith(".mjs"))
-          .map((name) => join(source.split("/")[0], name))
-      : [source];
-    if (
-      parts.length === 1 &&
-      !source.includes("*") &&
-      destination.endsWith(".json")
-    ) {
-      mkdirSync(resolve(destination, ".."), { recursive: true });
-      copyFileSync(source, destination);
-    } else {
+    if (source.includes("*")) {
+      const sources = readdirSync(source.split("/")[0])
+        .filter((name) => name.endsWith(".mjs"))
+        .map((name) => join(source.split("/")[0], name));
       mkdirSync(destination, { recursive: true });
       for (const file of sources)
         copyFileSync(file, join(destination, basename(file)));
+    } else if (parts.length === 1 && destination.endsWith(".json")) {
+      mkdirSync(resolve(destination, ".."), { recursive: true });
+      copyFileSync(source, destination);
+    } else if (statSync(source).isDirectory()) {
+      // Diretório inteiro (ex.: "COPY shared/ ./shared/") — o conteúdo de
+      // source vai pra dentro de destination, igual o COPY do Docker faz
+      // quando os dois lados terminam em "/".
+      mkdirSync(destination, { recursive: true });
+      cpSync(source, destination, { recursive: true });
+    } else {
+      mkdirSync(destination, { recursive: true });
+      copyFileSync(source, join(destination, basename(source)));
     }
   }
 }

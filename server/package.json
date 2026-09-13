@@ -9,5 +9,8 @@
   "scripts": {
     "start": "node --experimental-sqlite server.mjs",
     "test": "node --experimental-sqlite --test server.test.mjs rooms.test.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
   }
 }
