@@ -22,7 +22,7 @@ export default function MenuScreen({
           Seu jogador, suas partidas e tudo sobre o Duelou.
         </Text>
         <Button onPress={() => onNavigate("arenaRush")}>
-          Jogar agora · Arena Rush (Beta)
+          Duelo ao vivo · Arena Rush (Beta)
         </Button>
         <Button secondary onPress={() => onNavigate("profile")}>
           Meu perfil e conquistas
