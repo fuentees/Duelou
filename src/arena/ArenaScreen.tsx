@@ -3,10 +3,14 @@ import { AppState, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   ArenaState,
+  TroopType,
   createArenaState,
   spawn,
   step,
 } from "../../shared/arena/engine";
+import { ArenaChallenge, nextChallenge, resetChallengeSequence } from "./challenges";
+import ChallengePanel from "./ChallengePanel";
+import { playFail, playSuccess } from "../audio/sounds";
 import { palette, radius } from "../theme";
 import Button from "../components/Button";
 
@@ -14,6 +18,13 @@ type Screen = "start" | "playing" | "end";
 const MATCH_SECONDS = 100;
 // Stub simples pro bot — Ticket 6 troca isso por um oponente de verdade.
 const BOT_SPAWN_INTERVAL = 3;
+// Limiares de "resposta rápida" — abaixo disso, conta como rápido pra
+// efeito da regra de invocação (ver handleAnswer).
+const FAST_CHOICE_MS = 1500;
+const FAST_REFLEX_MS = 340;
+// Pequena pausa depois de responder, pra dar tempo de ver o feedback
+// certo/errado antes do próximo desafio aparecer.
+const NEXT_CHALLENGE_DELAY_MS = 280;
 // A paleta compartilhada não tem um azul de verdade (cyan/violet são os mais
 // próximos, mas nenhum lê como "time azul" claramente) — cor local só pra
 // distinguir os dois lados, junto com a paleta existente pro resto (rosa e
@@ -41,6 +52,43 @@ export default function ArenaScreen() {
   // uma partida — por enquanto Math.random é aceitável (motor não depende
   // disso pra nada além de uma pequena variação de dano no combate).
   const random = () => Math.random();
+
+  const [challenge, setChallenge] = useState<ArenaChallenge | null>(null);
+  const [challengeSeq, setChallengeSeq] = useState(0);
+  const nextChallengeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const queueNextChallenge = () => {
+    const state = arenaRef.current;
+    if (nextChallengeTimer.current) clearTimeout(nextChallengeTimer.current);
+    nextChallengeTimer.current = setTimeout(() => {
+      if (screenRef.current !== "playing") return;
+      setChallenge(nextChallenge(random, state.stats.challengesTotal));
+      setChallengeSeq((n) => n + 1);
+    }, NEXT_CHALLENGE_DELAY_MS);
+  };
+
+  // Regra de invocação: acerto rápido OU combo >= 3 sai soldier; os dois
+  // juntos saem tank; acerto normal sai scout; erro não invoca nada e zera
+  // o combo.
+  const handleAnswer = (correct: boolean, elapsedMs: number) => {
+    const state = arenaRef.current;
+    const kind = challenge?.kind;
+    state.stats.challengesTotal++;
+    if (!correct) {
+      state.combo = 0;
+      playFail();
+    } else {
+      state.combo++;
+      const fast = kind === "reflex" ? elapsedMs < FAST_REFLEX_MS : elapsedMs < FAST_CHOICE_MS;
+      const troopType: TroopType =
+        fast && state.combo >= 3 ? "tank" : fast || state.combo >= 3 ? "soldier" : "scout";
+      spawn(state, "player", troopType);
+      state.stats.hits++;
+      playSuccess();
+    }
+    rerender();
+    queueNextChallenge();
+  };
 
   const tick = (ts: number) => {
     if (screenRef.current !== "playing") return;
@@ -96,8 +144,26 @@ export default function ArenaScreen() {
     arenaRef.current = createArenaState(MATCH_SECONDS);
     lastTsRef.current = null;
     botClockRef.current = 0;
+    resetChallengeSequence();
+    setChallenge(nextChallenge(random, 0));
+    setChallengeSeq((n) => n + 1);
     setScreenState("playing");
   };
+
+  // Nenhum desafio pendente deveria resolver sozinho depois que a tela sai
+  // do ar ou a partida acaba (senão viraria um "boneco fantasma" invocado
+  // sem ninguém ver).
+  useEffect(() => {
+    return () => {
+      if (nextChallengeTimer.current) clearTimeout(nextChallengeTimer.current);
+    };
+  }, []);
+  useEffect(() => {
+    if (screen !== "playing" && nextChallengeTimer.current) {
+      clearTimeout(nextChallengeTimer.current);
+      nextChallengeTimer.current = null;
+    }
+  }, [screen]);
 
   const state = arenaRef.current;
 
@@ -130,11 +196,18 @@ export default function ArenaScreen() {
             ))}
           </View>
           <HealthBar label="SUA BASE" hp={state.playerBaseHp} color={PLAYER_COLOR} />
-          <View style={s.panelPlaceholder}>
-            <Text style={s.caption}>
-              Tempo restante: {Math.ceil(state.timeRemaining)}s
-            </Text>
-            <Text style={s.caption}>Painel de desafio (Ticket 4)</Text>
+          <View style={s.row}>
+            <Text style={s.caption}>Tempo restante: {Math.ceil(state.timeRemaining)}s</Text>
+            {state.combo >= 2 && (
+              <Text style={s.combo} accessibilityLiveRegion="polite">
+                🔥 combo x{state.combo}
+              </Text>
+            )}
+          </View>
+          <View style={s.panel}>
+            {challenge && (
+              <ChallengePanel key={challengeSeq} challenge={challenge} onAnswer={handleAnswer} />
+            )}
           </View>
         </View>
       ) : (
@@ -192,13 +265,13 @@ const s = StyleSheet.create({
     height: 20,
     borderRadius: 10,
   },
-  panelPlaceholder: {
+  row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  combo: { fontSize: 13, fontWeight: "900", color: palette.amber },
+  panel: {
     padding: 16,
     borderRadius: radius.md,
     backgroundColor: palette.surface,
     borderWidth: 1,
     borderColor: palette.border,
-    alignItems: "center",
-    gap: 4,
   },
 });
