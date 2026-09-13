@@ -13,14 +13,14 @@ import { ArenaChallenge, nextChallenge, resetChallengeSequence } from "./challen
 import ChallengePanel from "./ChallengePanel";
 import Troop from "./Troop";
 import { ENEMY_COLOR, PLAYER_COLOR } from "./colors";
+import type { BotDifficulty } from "./bot";
+import { createBotState, stepBot } from "./bot";
 import { playFail, playSuccess } from "../audio/sounds";
 import { palette, radius } from "../theme";
 import Button from "../components/Button";
 
 type Screen = "start" | "playing" | "end";
 const MATCH_SECONDS = 100;
-// Stub simples pro bot — Ticket 6 troca isso por um oponente de verdade.
-const BOT_SPAWN_INTERVAL = 3;
 // Limiares de "resposta rápida" — abaixo disso, conta como rápido pra
 // efeito da regra de invocação (ver handleAnswer).
 const FAST_CHOICE_MS = 1500;
@@ -33,7 +33,12 @@ const POOF_DURATION_MS = 350;
 
 type Poof = { key: number; position: number; side: Side };
 
-export default function ArenaScreen() {
+export default function ArenaScreen({
+  difficulty = "medium",
+}: {
+  // Ticket 9 usa "easy" na primeira partida do onboarding.
+  difficulty?: BotDifficulty;
+}) {
   const [screen, setScreen] = useState<Screen>("start");
   const screenRef = useRef<Screen>("start");
   const setScreenState = (next: Screen) => {
@@ -47,7 +52,7 @@ export default function ArenaScreen() {
 
   const rafRef = useRef<number | null>(null);
   const lastTsRef = useRef<number | null>(null);
-  const botClockRef = useRef(0);
+  const botRef = useRef(createBotState(difficulty));
 
   // TODO(Ticket 6/replay): trocar por um random com seed pra permitir repetir
   // uma partida — por enquanto Math.random é aceitável (motor não depende
@@ -108,11 +113,7 @@ export default function ArenaScreen() {
     lastTsRef.current = ts;
 
     const state = arenaRef.current;
-    botClockRef.current += dt;
-    if (botClockRef.current >= BOT_SPAWN_INTERVAL) {
-      botClockRef.current -= BOT_SPAWN_INTERVAL;
-      spawn(state, "enemy", "soldier");
-    }
+    stepBot(state, botRef.current, dt, random);
     const events = step(state, dt, random);
     const died = events.filter((e) => e.type === "troopDied") as Extract<
       (typeof events)[number],
@@ -168,7 +169,7 @@ export default function ArenaScreen() {
   const startMatch = () => {
     arenaRef.current = createArenaState(MATCH_SECONDS);
     lastTsRef.current = null;
-    botClockRef.current = 0;
+    botRef.current = createBotState(difficulty);
     lastPositions.current = new Map();
     setPoofs([]);
     resetChallengeSequence();

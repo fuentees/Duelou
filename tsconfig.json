@@ -1,5 +1,12 @@
 {
   "extends": "expo/tsconfig.base",
-  "compilerOptions": { "strict": true },
+  "compilerOptions": {
+    "strict": true,
+    // Só arquivos de shared/arena e src/arena importam .ts uns dos outros com
+    // extensão explícita — necessário pro Node conseguir rodar os testes
+    // (node --test) direto, sem loader nenhum. Seguro com noEmit:true (herdado
+    // de expo/tsconfig.base), que é exigido por essa flag.
+    "allowImportingTsExtensions": true
+  },
   "exclude": ["node_modules", "dist", "dist-web", "work", "backups", "data"]
 }
