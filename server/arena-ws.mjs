@@ -19,6 +19,11 @@ import { createArenaQueue } from "./arena-queue.mjs";
 
 const hash = (t) => createHash("sha256").update(t).digest("hex");
 const PATH = "/v1/arena-realtime";
+// Duas abas/dispositivos no máximo por conta — não impede jogar em outro
+// lugar, só evita alguém abrir sockets sem limite (a cota por minuto do
+// rate limiter já existe, isso é sobre quantas conexões ficam abertas ao
+// mesmo tempo).
+const MAX_SOCKETS_PER_PLAYER = 2;
 
 export function attachArenaRealtime(server, db, clock = Date.now, options = {}) {
   const { countdownMs = 3000, durationSeconds = 100 } = options;
@@ -173,6 +178,23 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
     matches.forfeit(matchId, match.sideOf.get(uid), "forfeit");
   }
 
+  /**
+   * Chamado quando o socket de `uid` cai (aba fechada, app derrubado, sem
+   * internet). Decisão já tomada com o usuário: sem tolerância — o outro
+   * lado vence na hora. `opponentLeft` avisa a queda antes do `matchOver`
+   * (disparado por matches.forfeit -> o listener "matchOver" já registrado)
+   * trazer o resultado.
+   */
+  function handleDisconnect(uid) {
+    const matchId = activeMatchOf.get(uid);
+    if (!matchId) return;
+    const match = matches.getMatch(matchId);
+    if (!match || match.ended) return;
+    const remainingUid = match.playerIds.find((id) => id !== uid);
+    send(matchSockets.get(matchId)?.get(remainingUid), "opponentLeft", { matchId });
+    matches.forfeit(matchId, match.sideOf.get(uid), "disconnect");
+  }
+
   function handleMessage(ws, uid, msg) {
     if (!msg || typeof msg.type !== "string")
       return send(ws, "error", { message: "Mensagem inválida." });
@@ -213,7 +235,7 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
       socketsByPlayer.get(uid)?.delete(ws);
       if (socketsByPlayer.get(uid)?.size === 0) socketsByPlayer.delete(uid);
       queue.leave(uid);
-      // Desistência por queda de conexão em partida ativa: Ticket 20.
+      handleDisconnect(uid);
     });
   });
 
@@ -250,6 +272,8 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
     } catch (e) {
       return rejectUpgrade(socket, e.status || 429, e.message);
     }
+    if ((socketsByPlayer.get(player.id)?.size ?? 0) >= MAX_SOCKETS_PER_PLAYER)
+      return rejectUpgrade(socket, 429, "Muitas conexões abertas ao mesmo tempo.");
     wss.handleUpgrade(req, socket, head, (ws) => {
       wss.emit("connection", ws, req, player.id);
     });

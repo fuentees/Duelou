@@ -146,6 +146,77 @@ test("conexão sem token (ou com token inválido) é rejeitada no handshake", as
   });
 });
 
+test("fechar a conexão em partida ativa: o outro jogador recebe opponentLeft + matchOver e vence na hora", async () => {
+  await withServer(async ({ app, call, wsBase }) => {
+    const a = (await call("/v1/guests", null, { name: "Alice3" })).data;
+    const b = (await call("/v1/guests", null, { name: "Bob3" })).data;
+    const wsA = connect(wsBase, a.token);
+    const wsB = connect(wsBase, b.token);
+    await Promise.all([
+      new Promise((r) => wsA.once("open", r)),
+      new Promise((r) => wsB.once("open", r)),
+    ]);
+    const msgsA = collect(wsA);
+    const msgsB = collect(wsB);
+    wsA.send(JSON.stringify({ type: "queue" }));
+    await waitFor(msgsA, "queued");
+    wsB.send(JSON.stringify({ type: "queue" }));
+    const foundA = await waitFor(msgsA, "matchFound");
+    const foundB = await waitFor(msgsB, "matchFound");
+
+    // Alice cai (fecha a conexão) antes da partida terminar sozinha.
+    wsA.close();
+
+    const left = await waitFor(msgsB, "opponentLeft");
+    assert.equal(left.matchId, foundA.matchId);
+    const over = await waitFor(msgsB, "matchOver");
+    // Bob é "enemy" (ver protocolo: quem chama startMatch(opponent, uid)
+    // passa quem emparelhou primeiro como side "player") — o importante é
+    // que quem ficou (Bob) seja sempre o vencedor, não um lado fixo.
+    assert.equal(over.winner, foundB.you);
+
+    const row = app.db.prepare("SELECT * FROM arena_matches WHERE id=?").get(foundA.matchId);
+    assert.equal(row.reason, "disconnect");
+
+    wsB.close();
+  });
+});
+
+test("mensagem 'forfeit' referenciando uma partida da qual não se participa é ignorada sem quebrar nada", async () => {
+  await withServer(async ({ call, wsBase }) => {
+    const stranger = (await call("/v1/guests", null, { name: "Estranho" })).data;
+    const ws = connect(wsBase, stranger.token);
+    await new Promise((r) => ws.once("open", r));
+    const msgs = collect(ws);
+    ws.send(JSON.stringify({ type: "forfeit", matchId: "partida-que-nao-existe" }));
+    // Não deveria travar nem fechar a conexão — confere que ainda responde.
+    ws.send(JSON.stringify({ type: "queue" }));
+    await waitFor(msgs, "queued");
+    ws.close();
+  });
+});
+
+test("uma quinta conexão (acima do limite por conta) é rejeitada no handshake", async () => {
+  await withServer(async ({ call, wsBase }) => {
+    const p = (await call("/v1/guests", null, { name: "MuitasAbas" })).data;
+    const ws1 = connect(wsBase, p.token);
+    const ws2 = connect(wsBase, p.token);
+    await Promise.all([
+      new Promise((r) => ws1.once("open", r)),
+      new Promise((r) => ws2.once("open", r)),
+    ]);
+    const ws3 = connect(wsBase, p.token);
+    const rejected = await new Promise((resolve) => {
+      ws3.once("unexpected-response", (_req, res) => resolve(res.statusCode));
+      ws3.once("close", () => resolve("closed"));
+      ws3.once("open", () => resolve("open-inesperado"));
+    });
+    assert.notEqual(rejected, "open-inesperado", "a terceira conexão simultânea deveria ser rejeitada");
+    ws1.close();
+    ws2.close();
+  });
+});
+
 test("mensagem 'answer' referenciando desafio de outro jogador é rejeitada", async () => {
   await withServer(async ({ call, wsBase }) => {
     const a = (await call("/v1/guests", null, { name: "Alice2" })).data;
