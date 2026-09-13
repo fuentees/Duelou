@@ -7,6 +7,11 @@ export const API_URL =
   "http://" +
     (Platform.OS === "web" ? globalThis.location.hostname : host) +
     ":3001";
+// Mesmo host/porta do API_URL, só trocando o esquema — usado pelo socket
+// da Arena Rush online (src/arena/useArenaSocket.ts). Não dá pra reaproveitar
+// API_URL com fetch() pra isso: WebSocket precisa do próprio protocolo.
+export const WS_URL =
+  process.env.EXPO_PUBLIC_WS_URL || API_URL.replace(/^http/, "ws");
 let token = "";
 const key = "duelou.session.v1";
 export async function restore() {
@@ -61,6 +66,12 @@ export async function api<T = any>(
   } finally {
     clearTimeout(timer);
   }
+}
+
+// Token da sessão atual, pra montar a URL do WebSocket (que não tem como
+// mandar um header Authorization no handshake, diferente de fetch()).
+export function getSessionToken() {
+  return token;
 }
 
 // Vincula sincronizações à sessão original, mesmo se o usuário trocar de conta.
