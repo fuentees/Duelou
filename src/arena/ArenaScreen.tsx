@@ -16,6 +16,7 @@ import ResultCard from "./ResultCard";
 import { ENEMY_COLOR, PLAYER_COLOR } from "./colors";
 import type { BotDifficulty } from "./bot";
 import { createBotState, stepBot } from "./bot";
+import { hasCompletedArenaTutorial, markArenaTutorialComplete } from "./onboarding";
 import { playFail, playSuccess } from "../audio/sounds";
 import useReducedMotion from "../useReducedMotion";
 import { palette, radius } from "../theme";
@@ -63,6 +64,21 @@ export default function ArenaScreen({
   const rafRef = useRef<number | null>(null);
   const lastTsRef = useRef<number | null>(null);
   const botRef = useRef(createBotState(difficulty));
+
+  // null enquanto ainda não sabemos se este aparelho já jogou antes —
+  // "Entrar na Arena" fica desabilitado esse tempinho pra não começar com a
+  // dificuldade errada por engano.
+  const [onboarded, setOnboarded] = useState<boolean | null>(null);
+  const [isTutorial, setIsTutorial] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    hasCompletedArenaTutorial().then((done) => {
+      if (alive) setOnboarded(done);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // TODO(Ticket 6/replay): trocar por um random com seed pra permitir repetir
   // uma partida — por enquanto Math.random é aceitável (motor não depende
@@ -213,9 +229,13 @@ export default function ArenaScreen({
   }, []);
 
   const startMatch = () => {
+    // A primeira partida de quem nunca jogou é sempre fácil e com dica —
+    // independente do que foi passado por prop (Ticket 9).
+    const tutorial = onboarded === false;
+    setIsTutorial(tutorial);
     arenaRef.current = createArenaState(MATCH_SECONDS);
     lastTsRef.current = null;
-    botRef.current = createBotState(difficulty);
+    botRef.current = createBotState(tutorial ? "easy" : difficulty);
     lastPositions.current = new Map();
     setPoofs([]);
     setBaseFlash({ player: false, enemy: false });
@@ -232,6 +252,16 @@ export default function ArenaScreen({
     if (onExit) onExit();
     else setScreenState("start");
   };
+
+  // Fim do tutorial: marca como concluído (não repete numa revanche, nem em
+  // sessões futuras) assim que a primeira partida termina, ganhando ou não —
+  // é sobre já ter jogado uma vez, não sobre ter vencido.
+  useEffect(() => {
+    if (screen === "end" && isTutorial) {
+      setOnboarded(true);
+      markArenaTutorialComplete();
+    }
+  }, [screen, isTutorial]);
 
   // Nenhum desafio pendente deveria resolver sozinho depois que a tela sai
   // do ar ou a partida acaba (senão viraria um "boneco fantasma" invocado
@@ -264,15 +294,24 @@ export default function ArenaScreen({
     <SafeAreaView style={s.screen}>
       {screen === "start" ? (
         <View style={s.center}>
+          <Text style={s.eyebrow}>EXPERIMENTAL · BETA</Text>
           <Text style={s.title}>Arena Rush</Text>
           <Text style={s.body}>
             Responda desafios pra invocar bonecos e derrube a base do
             adversário antes que ele derrube a sua.
           </Text>
-          <Button onPress={startMatch}>Entrar na Arena</Button>
+          <Button disabled={onboarded === null} onPress={startMatch}>
+            Entrar na Arena
+          </Button>
         </View>
       ) : screen === "playing" ? (
         <Animated.View style={[s.match, { transform: [{ translateX: shakeX }] }]}>
+          {isTutorial && (
+            <Text style={s.tutorialHint} accessibilityLiveRegion="polite">
+              💡 Acerte um desafio pra invocar um boneco — ele anda sozinho até
+              a base inimiga e causa dano quando chega lá.
+            </Text>
+          )}
           <HealthBar
             label="BASE INIMIGA"
             hp={state.enemyBaseHp}
@@ -337,6 +376,7 @@ export default function ArenaScreen({
           <ResultCard
             state={state}
             comeback={state.winner === "player" && wasCriticalRef.current}
+            showTutorialInfo={isTutorial}
             onRematch={startMatch}
             onMenu={handleMenu}
             onError={setShareError}
@@ -388,10 +428,26 @@ function HealthBar({
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: palette.bg },
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 16, padding: 24 },
+  eyebrow: {
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 1.5,
+    color: palette.textFaint,
+  },
   title: { fontSize: 28, fontWeight: "800", color: palette.text, textAlign: "center" },
   body: { fontSize: 14, lineHeight: 21, color: palette.textDim, textAlign: "center" },
   caption: { fontSize: 12, fontWeight: "700", color: palette.textFaint },
   match: { flex: 1, padding: 16, gap: 10 },
+  tutorialHint: {
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 18,
+    color: palette.text,
+    backgroundColor: palette.surfaceAlt,
+    borderRadius: radius.sm,
+    padding: 10,
+    textAlign: "center",
+  },
   healthBlock: { gap: 4 },
   healthTrack: {
     height: 14,

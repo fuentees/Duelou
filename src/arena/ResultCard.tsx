@@ -10,6 +10,7 @@ const err = (e: unknown) => (e instanceof Error ? e.message : "Algo deu errado."
 export default function ResultCard({
   state,
   comeback,
+  showTutorialInfo = false,
   onRematch,
   onMenu,
   onError,
@@ -18,6 +19,9 @@ export default function ResultCard({
   // Se a própria base do jogador chegou a ficar crítica em algum momento e
   // ele venceu mesmo assim — dá pro destaque "virou nos últimos segundos".
   comeback: boolean;
+  // Só true na primeira partida de quem nunca jogou (o tutorial) — não
+  // afogamos o novato explicando tudo antes disso.
+  showTutorialInfo?: boolean;
   onRematch: () => void;
   onMenu: () => void;
   onError?: (message: string) => void;
@@ -68,6 +72,17 @@ export default function ResultCard({
         <Text style={s.stat}>⚔ {state.stats.hits} bonecos</Text>
         <Text style={s.stat}>🎯 {accuracy}% de acerto</Text>
       </View>
+      {showTutorialInfo && (
+        <View style={s.tutorialBox}>
+          <Text style={s.tutorialTitle}>Como invocar mais forte</Text>
+          <Text style={s.tutorialLine}>⚡ Batedor — rápido, mas fraco</Text>
+          <Text style={s.tutorialLine}>🛡 Soldado — acerte rápido ou emende combo</Text>
+          <Text style={s.tutorialLine}>🛡🛡 Tanque — rápido E com combo x3+</Text>
+          <Text style={s.tutorialLine}>
+            Combo é sua sequência de acertos seguidos — errar zera ele.
+          </Text>
+        </View>
+      )}
       <Button onPress={onRematch}>Revanche</Button>
       <Button
         secondary
@@ -110,4 +125,13 @@ const s = StyleSheet.create({
   statsRow: { flexDirection: "row", flexWrap: "wrap", gap: 12, justifyContent: "center" },
   stat: { fontSize: 12, fontWeight: "700", color: palette.textDim },
   privacy: { fontSize: 11, lineHeight: 16, color: palette.textFaint, textAlign: "center" },
+  tutorialBox: {
+    alignSelf: "stretch",
+    gap: 4,
+    padding: 12,
+    borderRadius: radius.sm,
+    backgroundColor: palette.surfaceAlt,
+  },
+  tutorialTitle: { fontSize: 12, fontWeight: "900", color: palette.text },
+  tutorialLine: { fontSize: 12, fontWeight: "600", color: palette.textDim },
 });

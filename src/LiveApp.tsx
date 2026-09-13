@@ -18,6 +18,7 @@ import HomeScreen from "./HomeScreen";
 import MenuScreen from "./MenuScreen";
 import AudioSettingsScreen from "./AudioSettingsScreen";
 import Arcade from "./arcade/ArcadeScreen";
+import ArenaScreen from "./arena/ArenaScreen";
 import { gradients } from "./theme";
 import Button from "./components/Button";
 import BottomNav, { Section } from "./components/BottomNav";
@@ -214,6 +215,8 @@ export default function LiveApp() {
         setSection("profile");
       }}
     />
+  ) : section === "arenaRush" ? (
+    <ArenaScreen onExit={() => setSection("menu")} />
   ) : (
     <SafeAreaView style={s.screen}>
       <AppHeader status={profile?.name || "SUA CONTA"} />

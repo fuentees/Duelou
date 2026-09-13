@@ -4,7 +4,7 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { palette } from "../theme";
 
 export type Section =
-  "menu" | "home" | "arcade" | "ranking" | "profile" | "audio";
+  "menu" | "home" | "arcade" | "ranking" | "profile" | "audio" | "arenaRush";
 
 const items: {
   id: Section;
@@ -33,7 +33,7 @@ export default function BottomNav({
       {items.map((item) => {
         const active =
           section === item.id ||
-          ((section === "profile" || section === "audio") &&
+          ((section === "profile" || section === "audio" || section === "arenaRush") &&
             item.id === "menu");
         return (
           <Pressable
