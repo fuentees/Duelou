@@ -100,6 +100,8 @@ test("PvP via WebSocket: dois jogadores reais emparelham, jogam e o resultado fi
     const foundB = await waitFor(msgsB, "matchFound");
     assert.equal(foundA.opponent.name, "Bob");
     assert.equal(foundB.opponent.name, "Alice");
+    assert.equal(foundA.me.name, "Alice", "matchFound também traz o próprio nome/avatar, não só o do adversário");
+    assert.equal(foundB.me.name, "Bob");
     assert.notEqual(foundA.you, foundB.you, "os dois lados têm que ser diferentes");
     const matchId = foundA.matchId;
     assert.equal(foundB.matchId, matchId);

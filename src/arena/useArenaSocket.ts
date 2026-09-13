@@ -24,6 +24,7 @@ export default function useArenaSocket() {
   const [phase, setPhase] = useState<ArenaSocketPhase>("connecting");
   const [matchId, setMatchId] = useState<string | null>(null);
   const [you, setYou] = useState<Side | null>(null);
+  const [me, setMe] = useState<ArenaOpponent | null>(null);
   const [opponent, setOpponent] = useState<ArenaOpponent | null>(null);
   const [state, setState] = useState<ArenaState | null>(null);
   const [challenge, setChallenge] = useState<PublicArenaChallenge | null>(null);
@@ -81,6 +82,7 @@ export default function useArenaSocket() {
           matchIdRef.current = msg.matchId;
           setYou(msg.you);
           setMatchId(msg.matchId);
+          setMe(msg.me);
           setOpponent(msg.opponent);
           setPhase("matchFound");
           break;
@@ -155,6 +157,7 @@ export default function useArenaSocket() {
     phase,
     matchId,
     you,
+    me,
     opponent,
     state,
     challenge,

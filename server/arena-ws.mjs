@@ -119,16 +119,23 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
     }
     const a = playerRow(uidA);
     const b = playerRow(uidB);
+    const meA = { id: a.id, name: a.name, avatar: readAvatar(a.avatar) };
+    const meB = { id: b.id, name: b.name, avatar: readAvatar(b.avatar) };
+    // Manda o próprio avatar/nome junto (não só o do adversário) — evita a
+    // tela ter que depender de um perfil carregado à parte só pra saber
+    // "quem sou eu" na revelação do confronto (Ticket 24).
     send(sockets.get(uidA), "matchFound", {
       matchId,
       you: "player",
-      opponent: { id: b.id, name: b.name, avatar: readAvatar(b.avatar) },
+      me: meA,
+      opponent: meB,
       startsAt,
     });
     send(sockets.get(uidB), "matchFound", {
       matchId,
       you: "enemy",
-      opponent: { id: a.id, name: a.name, avatar: readAvatar(a.avatar) },
+      me: meB,
+      opponent: meA,
       startsAt,
     });
     setTimeout(() => {
