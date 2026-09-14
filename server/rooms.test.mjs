@@ -112,6 +112,16 @@ test("salas: descoberta, sorteio por nível, grupo, largada, placar, replay e sa
       await call("/v1/rooms", a.token, { mode: "math", capacity: 4, public: false })
     ).data;
     assert.equal(privateRoom.difficulty, 1);
+    // Tamanho de turma (Ticket 27) — presets grandes funcionam, valores fora
+    // da lista continuam rejeitados.
+    const classroom = (
+      await call("/v1/rooms", a.token, { mode: "math", capacity: 30, public: false })
+    ).data;
+    assert.equal(classroom.capacity, 30);
+    assert.equal(
+      (await call("/v1/rooms", a.token, { mode: "math", capacity: 12, public: false })).status,
+      400,
+    );
     assert.equal((await call("/v1/rooms", b.token)).data.length, 0);
     assert.equal(
       (await call("/v1/rooms/" + privateRoom.code, b.token)).status,

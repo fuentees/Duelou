@@ -10,6 +10,7 @@ import {
   modes,
   MAX_LEVEL,
   CLEAR_SCORE,
+  ROOM_CAPACITIES,
   resultDetails,
   minimumAttemptMs,
 } from "../shared/arcade.mjs";
@@ -363,8 +364,8 @@ export function roomRoutes(db, clock) {
       body.mode,
       body.difficulty ?? currentLevel(uid, body.mode),
     );
-    if (![2, 4, 6].includes(body.capacity))
-      fail(400, "Escolha 2, 4 ou 6 jogadores.");
+    if (!ROOM_CAPACITIES.includes(body.capacity))
+      fail(400, "Escolha um tamanho de sala válido.");
     const format = body.format === "md3" ? "md3" : "md1";
     if (
       one(

@@ -79,6 +79,13 @@ export const MAX_LEVEL = 30;
 // Pontuação mínima (de 1.000) pra considerar a fase "passada" e destravar a
 // próxima — mesmo critério usado no servidor (rooms.mjs) e no offline (client).
 export const CLEAR_SCORE = 650;
+// Opções de tamanho de sala oferecidas na criação — fonte única compartilhada
+// entre server/rooms.mjs (validação) e o seletor no cliente
+// (src/arcade/BrowseView.tsx), pra nunca o cliente oferecer um tamanho que o
+// servidor recusa. Vai até 30 pra caber uma turma de sala de aula inteira;
+// não afeta a fila 1×1 (competitiva/pública), que sempre usa capacidade 2
+// hardcoded em server/rooms.mjs, fora desta lista de propósito.
+export const ROOM_CAPACITIES = [2, 4, 6, 8, 10, 15, 20, 25, 30];
 export const levels = Array.from(
   { length: MAX_LEVEL },
   (_, i) => `Nível ${i + 1}`,

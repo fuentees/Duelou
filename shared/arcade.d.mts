@@ -35,6 +35,7 @@ export type ArcadeConfig = {
 };
 export const MAX_LEVEL: number;
 export const CLEAR_SCORE: number;
+export const ROOM_CAPACITIES: number[];
 export const levels: string[];
 export const levelRules: { rounds: number; seconds: number }[];
 export const levelDetails: Record<ArcadeMode, string>;
