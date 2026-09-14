@@ -168,3 +168,36 @@ test("historico paginado isola contas e respeita exclusao", async () => {
     assert.equal(app.db.prepare("SELECT COUNT(*) n FROM game_history").get().n,0);
   } finally {await new Promise(r=>app.server.close(r));app.db.close();}
 });
+
+test("/v1/guests aceita uma rajada de turma (até 40/min pelo mesmo IP), sem afrouxar /v1/sessions/recover", async () => {
+  const app = createApp(":memory:");
+  await new Promise((r) => app.server.listen(0, "127.0.0.1", r));
+  const base = "http://127.0.0.1:" + app.server.address().port;
+  const guest = (name) =>
+    fetch(base + "/v1/guests", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+  try {
+    // 30 alunos + margem: uma turma inteira criando conta pela mesma rede da
+    // escola aparece pro servidor como um único IP — não pode ser barrado
+    // como se fosse abuso (Ticket 31).
+    for (let i = 0; i < 40; i++)
+      assert.equal((await guest("Turma" + i)).status, 201, `convidado ${i} não deveria ser limitado`);
+    assert.equal((await guest("Turma40")).status, 429, "41ª criação na mesma janela deveria ser limitada");
+    // /v1/sessions/recover é uma superfície de adivinhar código de conta
+    // alheia — continua com o limite antigo, bem mais apertado.
+    const recover = () =>
+      fetch(base + "/v1/sessions/recover", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: "0000-0000-0000-0000-0000-0000" }),
+      });
+    for (let i = 0; i < 15; i++) assert.notEqual((await recover()).status, 429);
+    assert.equal((await recover()).status, 429, "recuperação continua limitada a 15/min");
+  } finally {
+    await new Promise((r) => app.server.close(r));
+    app.db.close();
+  }
+});

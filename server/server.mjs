@@ -229,7 +229,16 @@ export function createApp(
       // Forwarded headers are intentionally ignored. Shared proxy IPs do not
       // restrict signed-in players; anonymous account/recovery attempts remain bounded.
       const ip = req.socket.remoteAddress || "unknown";
-      if (isSessionRoute) limitRequest(`session:${route}:${ip}`, 15);
+      if (isSessionRoute)
+        limitRequest(
+          `session:${route}:${ip}`,
+          // Uma turma inteira criando conta ao mesmo tempo pela rede da
+          // escola aparece pro servidor como um único IP (Ticket 31) — não
+          // é abuso, é o caso de uso real da sala de aula. /v1/sessions/
+          // recover continua mais restrito: é a superfície de tentativa de
+          // adivinhar o código de recuperação de outra conta.
+          route === "/v1/guests" ? 40 : 15,
+        );
       else if (isHealth) limitRequest(`health:${ip}`, 120);
       else if (player) limitRequest(`player:${player.id}`, 240);
       else limitRequest(`anonymous:${ip}`, 60);

@@ -23,6 +23,7 @@
     "test:resilience": "node scripts/check-competitive.mjs --resilience",
     "test:competitive": "node scripts/check-competitive.mjs",
     "test:md3": "node scripts/check-md3.mjs",
+    "test:classroom": "node --experimental-sqlite scripts/check-classroom-room.mjs",
     "check:bundle": "node scripts/check-bundle.mjs",
     "test:container": "node scripts/check-container-files.mjs",
     "build:web": "expo export --platform web --output-dir dist-web",
