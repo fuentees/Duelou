@@ -18,6 +18,27 @@ export const palette = {
   red: "#E11D48",
   gold: "#FFB703",
 };
+// Tema da partida da Arena Rush. O app inteiro é claro e continua sendo —
+// mas o campo de batalha em rosa/lilás pastel dizia "passatempo", não
+// "duelo", e tropa colorida sobre fundo claro tem menos contraste do que
+// merece. A arena é o único lugar escuro do app: comunica o que é e faz as
+// duas cores dos lados saltarem.
+export const arena = {
+  bg: "#0E1222",
+  surface: "#171C30",
+  surfaceAlt: "#1F2540",
+  border: "#2C3454",
+  text: "#F2F4FF",
+  textDim: "#A9B0D0",
+  textFaint: "#7C85AB",
+  lane: ["#151A2E", "#1B2340", "#141A2C"] as const,
+  // Versões claras dos acentos: verde/vermelho/âmbar da paleta clara ficam
+  // escuros demais sobre o fundo da arena e perdem contraste justamente nos
+  // avisos que mais importam (crítico, morte súbita, conexão).
+  good: "#3DDC97",
+  warn: "#FFC14D",
+  danger: "#FF6584",
+};
 export const gradients = {
   hero: ["#6742DB", "#086E7A"] as const,
   brand: ["#7C5CFF", "#12B8C4"] as const,

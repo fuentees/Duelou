@@ -5,6 +5,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import Character from "../components/Character";
 import Button from "../components/Button";
 import Card from "../components/Card";
+import BottomNav, { Section } from "../components/BottomNav";
 import ArenaOnlineScreen from "./ArenaOnlineScreen";
 import ArenaScreen from "./ArenaScreen";
 import { api } from "../api";
@@ -30,7 +31,18 @@ type ArenaHistoryRow = {
   theirBaseHp: number;
 };
 
-export default function ArenaLobby({ avatar, onExit }: { avatar?: unknown; onExit: () => void }) {
+export default function ArenaLobby({
+  avatar,
+  onExit,
+  onNavigate,
+}: {
+  avatar?: unknown;
+  onExit: () => void;
+  // Com o duelo virando destino próprio da barra de navegação, o lobby
+  // mostra a barra como qualquer outra tela — em vez de ser um beco com um
+  // único botão de voltar.
+  onNavigate?: (section: Section) => void;
+}) {
   const [playing, setPlaying] = useState(false);
   const [training, setTraining] = useState(false);
   const [stats, setStats] = useState<ArenaStats | null>(null);
@@ -69,7 +81,7 @@ export default function ArenaLobby({ avatar, onExit }: { avatar?: unknown; onExi
   const outcomeColor = { win: palette.green, loss: palette.red, draw: palette.textDim } as const;
   return <SafeAreaView style={{ flex: 1, backgroundColor: palette.bg }}>
     <ScrollView contentContainerStyle={s.content}>
-      <Button secondary onPress={onExit}>Voltar ao menu</Button>
+      {!onNavigate && <Button secondary onPress={onExit}>Voltar ao menu</Button>}
       <LinearGradient colors={gradients.hero} style={s.hero}>
         <Text style={s.eyebrow}>DUELOU / DUELO EM TEMPO REAL</Text>
         <View style={s.versus}>
@@ -151,6 +163,7 @@ export default function ArenaLobby({ avatar, onExit }: { avatar?: unknown; onExi
         </View>)}
       </Card>
     </ScrollView>
+    {onNavigate && <BottomNav section="arenaRush" onChange={onNavigate} />}
   </SafeAreaView>;
 }
 const s = StyleSheet.create({

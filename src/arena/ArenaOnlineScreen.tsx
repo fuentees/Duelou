@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Animated, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import useArenaSocket from "./useArenaSocket";
 import MatchmakingScreen from "./MatchmakingScreen";
@@ -13,7 +13,7 @@ import type { ArenaState, Side, TroopType } from "../../shared/arena/engine";
 import { SUDDEN_DEATH_SECONDS } from "../../shared/arena/engine";
 import { playFail, playSuccess } from "../audio/sounds";
 import useReducedMotion from "../useReducedMotion";
-import { palette, radius } from "../theme";
+import { arena, palette, radius } from "../theme";
 import Button from "../components/Button";
 import LiveStatus from "../components/LiveStatus";
 import Battlefield from "./Battlefield";
@@ -258,7 +258,7 @@ export default function ArenaOnlineScreen({
               <Text
                 style={[
                   s.ping,
-                  { color: socket.rttMs < 120 ? palette.green : socket.rttMs < 250 ? palette.amber : palette.red },
+                  { color: socket.rttMs < 120 ? arena.good : socket.rttMs < 250 ? arena.warn : arena.danger },
                 ]}
                 accessibilityLabel={`Sua conexão: ${socket.rttMs} milissegundos de ida e volta`}
               >
@@ -267,7 +267,12 @@ export default function ArenaOnlineScreen({
             )}
           </View>
           <Text accessibilityLabel={`Tempo restante: ${Math.ceil(state.timeRemaining)} segundos`}
-            style={{ fontSize: 20, fontWeight: "900", color: state.timeRemaining <= 15 ? palette.red : palette.text, fontVariant: ["tabular-nums"] }}>
+            style={{
+              fontSize: 26,
+              fontWeight: "900",
+              color: state.timeRemaining <= SUDDEN_DEATH_SECONDS ? arena.danger : arena.text,
+              fontVariant: ["tabular-nums"],
+            }}>
             {Math.floor(Math.max(0, Math.ceil(state.timeRemaining)) / 60)}:{String(Math.max(0, Math.ceil(state.timeRemaining)) % 60).padStart(2, "0")}
           </Text>
         </View>
@@ -283,11 +288,24 @@ export default function ArenaOnlineScreen({
           </Text>
         )}
         <HealthBar
+          dark
           label="BASE INIMIGA"
+          name={socket.opponent?.name || "Adversário"}
+          avatar={socket.opponent?.avatar}
           hp={state.enemyBaseHp}
           color={ENEMY_COLOR}
           flash={baseFlash.enemy}
           danger={state.enemyBaseHp < DANGER_THRESHOLD}
+          trailing={
+            <>
+              {socket.opponentReconnecting && <LiveStatus mode="inline" state="reconnecting" />}
+              {/* Ver o combo do rival é metade da tensão de um 1×1: o dado
+                  já chegava pelo socket e não aparecia em lugar nenhum. */}
+              {state.combo.enemy >= 2 && (
+                <Text style={s.enemyCombo}>🔥 x{state.combo.enemy}</Text>
+              )}
+            </>
+          }
         />
         <View style={s.lane} onLayout={(e) => setLaneHeight(e.nativeEvent.layout.height)}>
           <Battlefield />
@@ -325,31 +343,26 @@ export default function ArenaOnlineScreen({
           ))}
         </View>
         <HealthBar
+          dark
           label="SUA BASE"
+          name={socket.me?.name || "Você"}
+          avatar={socket.me?.avatar}
           hp={state.playerBaseHp}
           color={PLAYER_COLOR}
           flash={baseFlash.player}
           danger={state.playerBaseHp < DANGER_THRESHOLD}
+          trailing={
+            state.combo.player >= 2 ? (
+              <Text style={s.combo} accessibilityLiveRegion="polite">
+                🔥 COMBO x{state.combo.player}
+              </Text>
+            ) : null
+          }
         />
-        <View style={s.row}>
-          <View style={s.opponentNameRow}>
-            <Text style={s.caption}>{socket.opponent?.name || "Adversário"}</Text>
-            {socket.opponentReconnecting && <LiveStatus mode="inline" state="reconnecting" />}
-            {/* Ver o combo do rival é metade da tensão de um 1×1: o dado já
-                chegava pelo socket e não aparecia em lugar nenhum. */}
-            {state.combo.enemy >= 2 && (
-              <Text style={s.enemyCombo}>🔥 x{state.combo.enemy}</Text>
-            )}
-          </View>
-          {state.combo.player >= 2 && (
-            <Text style={s.combo} accessibilityLiveRegion="polite">
-              🔥 SEU COMBO x{state.combo.player}
-            </Text>
-          )}
-        </View>
         <View style={s.panel}>
           {socket.challenge && (
             <ChallengePanel
+              dark
               key={socket.challengeId}
               challenge={socket.challenge}
               onSubmit={(payload) => socket.submitAnswer(payload)}
@@ -358,28 +371,33 @@ export default function ArenaOnlineScreen({
             />
           )}
         </View>
-        <Button secondary onPress={socket.forfeit}>
-          Desistir
-        </Button>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Desistir da partida"
+          onPress={socket.forfeit}
+          style={s.forfeit}
+        >
+          <Text style={s.forfeitText}>Desistir</Text>
+        </Pressable>
       </Animated.View>
     </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: palette.bg },
+  screen: { flex: 1, backgroundColor: arena.bg },
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 16, padding: 24 },
   match: { flex: 1, padding: 12, gap: 8, width: "100%", maxWidth: 660, alignSelf: "center" },
   row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   opponentNameRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", flex: 1, minWidth: 0, gap: 8 },
-  caption: { fontSize: 12, fontWeight: "700", color: palette.textFaint, flexShrink: 1 },
-  combo: { fontSize: 13, fontWeight: "900", color: palette.amber },
+  caption: { fontSize: 12, fontWeight: "800", color: arena.textFaint, flexShrink: 1, letterSpacing: 0.5 },
+  combo: { fontSize: 13, fontWeight: "900", color: arena.warn },
   ping: { fontSize: 11, fontWeight: "800", fontVariant: ["tabular-nums"] },
   enemyCombo: { fontSize: 12, fontWeight: "900", color: ENEMY_COLOR },
   suddenDeath: {
     fontSize: 12,
     fontWeight: "900",
-    color: palette.red,
+    color: arena.danger,
     textAlign: "center",
     letterSpacing: 0.5,
   },
@@ -396,36 +414,47 @@ const s = StyleSheet.create({
     overflow: "hidden",
   },
   summonGood: { color: "#FFFFFF", backgroundColor: PLAYER_COLOR },
-  summonWarn: { color: "#3A2A00", backgroundColor: palette.amber },
-  opponentLeft: { fontSize: 13, fontWeight: "700", color: palette.textDim, textAlign: "center" },
+  summonWarn: { color: "#3A2A00", backgroundColor: arena.warn },
+  opponentLeft: { fontSize: 13, fontWeight: "700", color: arena.textDim, textAlign: "center" },
   reconnectingBanner: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
     alignSelf: "center",
   },
-  reconnectingBannerText: { fontSize: 12, fontWeight: "700", color: palette.textDim },
+  reconnectingBannerText: { fontSize: 12, fontWeight: "700", color: arena.textDim },
   frontLine: {
     position: "absolute",
     left: 0,
     right: 0,
     height: 2,
-    backgroundColor: palette.amber,
+    backgroundColor: arena.warn,
     opacity: 0.6,
   },
   lane: {
     flex: 1,
-    backgroundColor: palette.surfaceAlt,
+    // Em tela pequena, sem piso a pista virava uma faixa fina entre as barras
+    // de vida e o painel de resposta — e é nela que a partida acontece.
+    minHeight: 200,
+    backgroundColor: arena.surface,
     borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: arena.border,
     overflow: "hidden",
     position: "relative",
   },
   poof: { position: "absolute", left: "50%", marginLeft: -12, fontSize: 22 },
   panel: {
-    padding: 16,
-    borderRadius: radius.md,
-    backgroundColor: palette.surface,
+    padding: 14,
+    borderRadius: radius.lg,
+    backgroundColor: arena.surface,
     borderWidth: 1,
-    borderColor: palette.border,
+    borderColor: arena.border,
+    // Altura mínima pro painel não "pular" entre um desafio de escolha (com
+    // enunciado e quatro alternativas) e um de reflexo (um botão só).
+    minHeight: 190,
+    justifyContent: "center",
   },
+  forfeit: { alignSelf: "center", minHeight: 44, minWidth: 96, justifyContent: "center" },
+  forfeitText: { color: arena.textFaint, fontWeight: "800", fontSize: 13, textAlign: "center" },
 });

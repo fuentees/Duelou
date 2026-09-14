@@ -234,7 +234,11 @@ export default function LiveApp() {
     // PvP é o único modo agora (decisão do usuário) — o modo contra bot
     // (ArenaScreen/bot.ts) continua no repositório, testado, só deixa de
     // ser alcançado por aqui.
-    <ArenaLobby avatar={profile.avatar} onExit={() => setSection("menu")} />
+    <ArenaLobby
+      avatar={profile.avatar}
+      onExit={() => setSection("menu")}
+      onNavigate={setSection}
+    />
   ) : (
     <SafeAreaView style={s.screen}>
       <AppHeader status={profile.name} />

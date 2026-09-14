@@ -4,7 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Button from "../components/Button";
 import LiveStatus from "../components/LiveStatus";
 import useReducedMotion from "../useReducedMotion";
-import { palette } from "../theme";
+import { arena } from "../theme";
 
 // A partir de quantos segundos de espera a tela oferece treinar contra o
 // robô. Antes daqui, atrapalha mais do que ajuda: a maioria das filas resolve
@@ -57,6 +57,7 @@ export default function MatchmakingScreen({
       <View style={s.center}>
         {stalled ? (
           <LiveStatus
+            dark
             mode="screen"
             state={status === "error" ? "lost" : "reconnecting"}
             message={
@@ -101,9 +102,9 @@ export default function MatchmakingScreen({
 }
 
 const s = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: palette.bg },
+  screen: { flex: 1, backgroundColor: arena.bg },
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 16, padding: 24 },
   icon: { fontSize: 48 },
-  title: { fontSize: 22, fontWeight: "800", color: palette.text, textAlign: "center" },
-  body: { fontSize: 14, lineHeight: 21, color: palette.textDim, textAlign: "center" },
+  title: { fontSize: 24, fontWeight: "900", color: arena.text, textAlign: "center" },
+  body: { fontSize: 14, lineHeight: 21, color: arena.textDim, textAlign: "center" },
 });
