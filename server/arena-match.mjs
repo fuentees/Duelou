@@ -57,12 +57,34 @@ export function createArenaMatchEngine({
       playerIds: [playerAId, playerBId],
       startsAt,
       ended: false,
+      paused: false,
     });
     return { matchId, startsAt };
   }
 
   function getMatch(matchId) {
     return matches.get(matchId) ?? null;
+  }
+
+  /**
+   * Pausa/retoma uma partida (Ticket 39: dá tempo de quem caiu reconectar
+   * sem perder na hora). tickAll() simplesmente pula partidas pausadas — o
+   * dt de cada tick é sempre fixo (tickMs/1000, nunca calculado a partir do
+   * relógio de verdade), então "não chamar step()" já congela timeRemaining
+   * e as tropas sozinho, sem precisar de nenhuma lógica extra de retomada.
+   */
+  function pauseMatch(matchId) {
+    const match = matches.get(matchId);
+    if (!match || match.ended) return false;
+    match.paused = true;
+    return true;
+  }
+
+  function resumeMatch(matchId) {
+    const match = matches.get(matchId);
+    if (!match || match.ended) return false;
+    match.paused = false;
+    return true;
   }
 
   function sideOfPlayer(matchId, uid) {
@@ -121,7 +143,7 @@ export function createArenaMatchEngine({
   function tickAll() {
     const nowMs = now();
     for (const [matchId, match] of matches) {
-      if (match.ended || nowMs < match.startsAt) continue;
+      if (match.ended || match.paused || nowMs < match.startsAt) continue;
       const events = step(match.state, tickMs / 1000, random);
       emit("tick", { matchId, state: match.state, events });
       if (match.state.over) {
@@ -149,6 +171,8 @@ export function createArenaMatchEngine({
     sideOfPlayer,
     applyAnswer,
     forfeit,
+    pauseMatch,
+    resumeMatch,
     endMatch,
     on,
     tickAll, // exposto pra teste disparar manualmente com scheduler falso

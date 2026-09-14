@@ -148,3 +148,43 @@ test("uma partida com startsAt no futuro não avança até esse instante (fase d
   assert.ok(engine.getMatch("m1").state.timeRemaining < before, "deveria avançar depois de startsAt");
   engine.stop();
 });
+
+test("pauseMatch congela timeRemaining e as tropas; resumeMatch volta a avançar de onde parou", () => {
+  const { engine, scheduler } = makeEngine();
+  engine.createMatch("m1", "alice", "bob");
+  engine.applyAnswer("m1", "alice", { correct: true, elapsedMs: 10, kind: "choice" });
+  for (let i = 0; i < 20; i++) scheduler.tick(); // deixa o motor rodar um pouco antes de pausar
+
+  const ok = engine.pauseMatch("m1");
+  assert.equal(ok, true);
+  const frozenTime = engine.getMatch("m1").state.timeRemaining;
+  const frozenPositions = engine.getMatch("m1").state.troops.map((t) => t.position);
+  for (let i = 0; i < 30; i++) scheduler.tick();
+  assert.equal(engine.getMatch("m1").state.timeRemaining, frozenTime, "pausada, timeRemaining não deveria mudar");
+  assert.deepEqual(
+    engine.getMatch("m1").state.troops.map((t) => t.position),
+    frozenPositions,
+    "pausada, as tropas não deveriam se mover",
+  );
+
+  const resumed = engine.resumeMatch("m1");
+  assert.equal(resumed, true);
+  for (let i = 0; i < 5; i++) scheduler.tick();
+  assert.ok(
+    engine.getMatch("m1").state.timeRemaining < frozenTime,
+    "depois de resumeMatch, o tempo deveria voltar a passar",
+  );
+  engine.stop();
+});
+
+test("pauseMatch/resumeMatch numa partida inexistente ou já encerrada devolve false sem quebrar", () => {
+  const { engine } = makeEngine();
+  assert.equal(engine.pauseMatch("nao-existe"), false);
+  assert.equal(engine.resumeMatch("nao-existe"), false);
+
+  engine.createMatch("m1", "alice", "bob");
+  engine.forfeit("m1", "player");
+  assert.equal(engine.pauseMatch("m1"), false, "partida já encerrada não pode ser pausada");
+  assert.equal(engine.resumeMatch("m1"), false);
+  engine.stop();
+});
