@@ -5,6 +5,7 @@ import {
   decideTroopType,
   FAST_CHOICE_MS,
   MAX_TROOPS_PER_SIDE,
+  COMBO_SPEND_COST,
 } from "../shared/arena/engine.ts";
 
 function fakeScheduler() {
@@ -221,4 +222,33 @@ test("resposta errada não invoca nada e diz isso explicitamente", () => {
   engine.createMatch("m1", "alice", "bob");
   const wrong = engine.applyAnswer("m1", "alice", { correct: false, elapsedMs: 100, kind: "choice" });
   assert.deepEqual(wrong, { troopType: null, spawned: false });
+});
+
+test("useCombo invoca um tanque na hora e cobra o combo; sem combo, recusa sem cobrar", () => {
+  const { engine } = makeEngine();
+  engine.createMatch("m1", "alice", "bob");
+  const state = engine.getMatch("m1").state;
+
+  assert.deepEqual(engine.useCombo("m1", "alice"), { spent: false }, "sem combo não invoca nada");
+  assert.equal(state.troops.length, 0);
+
+  state.combo.player = COMBO_SPEND_COST;
+  assert.deepEqual(engine.useCombo("m1", "alice"), { spent: true });
+  assert.equal(state.troops.length, 1);
+  assert.equal(state.troops[0].type, "tank");
+  assert.equal(state.combo.player, 0);
+
+  // O combo de um lado nunca é cobrado do outro.
+  state.combo.enemy = COMBO_SPEND_COST;
+  engine.useCombo("m1", "bob");
+  assert.equal(state.combo.enemy, 0);
+  assert.equal(state.combo.player, 0);
+  assert.equal(state.troops.filter((t) => t.side === "enemy").length, 1);
+});
+
+test("useCombo de quem não está na partida (ou de partida inexistente) devolve null", () => {
+  const { engine } = makeEngine();
+  engine.createMatch("m1", "alice", "bob");
+  assert.equal(engine.useCombo("m1", "carol"), null);
+  assert.equal(engine.useCombo("nao-existe", "alice"), null);
 });

@@ -11,6 +11,7 @@ import {
   createArenaState,
   decideTroopType,
   spawn,
+  spendCombo,
   step,
 } from "../shared/arena/engine.ts";
 
@@ -125,6 +126,20 @@ export function createArenaMatchEngine({
   }
 
   /**
+   * Gasta o combo acumulado do jogador pra invocar um tanque na hora (ver
+   * spendCombo em shared/arena/engine.ts). Quem valida se há combo é sempre
+   * o servidor — o cliente só pede. Devolve null se a partida/jogador não
+   * existe, senão `{ spent }`.
+   */
+  function useCombo(matchId, uid) {
+    const match = matches.get(matchId);
+    if (!match || match.ended) return null;
+    const side = match.sideOf.get(uid);
+    if (!side) return null;
+    return { spent: spendCombo(match.state, side) };
+  }
+
+  /**
    * Encerra a partida por desistência — o lado oposto a `loserSide` vence
    * na hora (decisão do usuário: sem tolerância de reconexão, ver Ticket 20).
    */
@@ -175,6 +190,7 @@ export function createArenaMatchEngine({
     getMatch,
     sideOfPlayer,
     applyAnswer,
+    useCombo,
     forfeit,
     pauseMatch,
     resumeMatch,

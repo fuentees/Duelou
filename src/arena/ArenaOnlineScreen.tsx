@@ -10,7 +10,7 @@ import ResultCard from "./ResultCard";
 import BattlePresentation, { BattleMember } from "../arcade/BattlePresentation";
 import { ENEMY_COLOR, PLAYER_COLOR } from "./colors";
 import type { ArenaState, Side, TroopType } from "../../shared/arena/engine";
-import { SUDDEN_DEATH_SECONDS } from "../../shared/arena/engine";
+import { COMBO_SPEND_COST, SUDDEN_DEATH_SECONDS } from "../../shared/arena/engine";
 import { playFail, playSuccess } from "../audio/sounds";
 import useReducedMotion from "../useReducedMotion";
 import { arena, palette, radius } from "../theme";
@@ -96,7 +96,13 @@ export default function ArenaOnlineScreen({
       playSuccess();
       setSummon({ text: `${TROOP_LABEL[answer.troopType ?? "scout"]} invocado`, tone: "good" });
     } else {
-      setSummon({ text: "Pista cheia — espere abrir espaço", tone: "warn" });
+      setSummon({
+        text:
+          answer.source === "combo"
+            ? "Combo insuficiente ou pista cheia"
+            : "Pista cheia — espere abrir espaço",
+        tone: "warn",
+      });
     }
     const timer = setTimeout(() => setSummon(null), SUMMON_TOAST_MS);
     return () => clearTimeout(timer);
@@ -359,6 +365,35 @@ export default function ArenaOnlineScreen({
             ) : null
           }
         />
+        {/* A única decisão da partida que não é "responda mais rápido":
+            segurar o combo deixa as próximas invocações mais fortes, gastar
+            coloca um tanque em campo agora. */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ disabled: state.combo.player < COMBO_SPEND_COST }}
+          accessibilityLabel={
+            state.combo.player >= COMBO_SPEND_COST
+              ? "Gastar combo para invocar um tanque agora"
+              : `Invocar tanque: precisa de combo ${COMBO_SPEND_COST}, você tem ${state.combo.player}`
+          }
+          disabled={state.combo.player < COMBO_SPEND_COST}
+          onPress={socket.useCombo}
+          style={[
+            s.comboButton,
+            state.combo.player >= COMBO_SPEND_COST ? s.comboButtonReady : null,
+          ]}
+        >
+          <Text
+            style={[
+              s.comboButtonText,
+              state.combo.player >= COMBO_SPEND_COST ? s.comboButtonTextReady : null,
+            ]}
+          >
+            {state.combo.player >= COMBO_SPEND_COST
+              ? `🛡🛡 GASTAR COMBO x${COMBO_SPEND_COST} · INVOCAR TANQUE`
+              : `🛡🛡 Tanque na hora: combo ${state.combo.player}/${COMBO_SPEND_COST}`}
+          </Text>
+        </Pressable>
         <View style={s.panel}>
           {socket.challenge && (
             <ChallengePanel
@@ -455,6 +490,19 @@ const s = StyleSheet.create({
     minHeight: 190,
     justifyContent: "center",
   },
+  comboButton: {
+    minHeight: 48,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: arena.border,
+    backgroundColor: arena.surface,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 10,
+  },
+  comboButtonReady: { backgroundColor: arena.warn, borderColor: arena.warn },
+  comboButtonText: { fontSize: 13, fontWeight: "800", color: arena.textFaint, textAlign: "center" },
+  comboButtonTextReady: { color: "#2A1D00", fontWeight: "900" },
   forfeit: { alignSelf: "center", minHeight: 44, minWidth: 96, justifyContent: "center" },
   forfeitText: { color: arena.textFaint, fontWeight: "800", fontSize: 13, textAlign: "center" },
 });

@@ -23,6 +23,9 @@ export type ArenaAnswerFeedback = {
   troopType: TroopType | null;
   // false com correct=true: acertou, mas a pista já estava no teto de tropas.
   spawned: boolean;
+  // "combo" = invocação avulsa pedida pelo jogador (gastar combo), não
+  // resposta de desafio — o aviso na tela é outro.
+  source: "answer" | "combo";
 };
 
 // Conecta na Arena Rush online (server/arena-ws.mjs) e entra na fila
@@ -195,6 +198,7 @@ export default function useArenaSocket() {
                 correct: !!msg.correct,
                 troopType: msg.troopType ?? null,
                 spawned: !!msg.spawned,
+                source: "answer",
               });
             }
             break;
@@ -219,6 +223,15 @@ export default function useArenaSocket() {
             // conclusão, não uma reação instantânea.
             if (opponentReconnectingRef.current) setOpponentLeft(true);
             setPhaseBoth("ended");
+            break;
+          case "comboSpent":
+            setLastAnswer({
+              seq: ++answerSeqRef.current,
+              correct: true,
+              troopType: "tank",
+              spawned: !!msg.spent,
+              source: "combo",
+            });
             break;
           case "latency":
             if (typeof msg.rttMs === "number") setRttMs(msg.rttMs);
@@ -259,6 +272,14 @@ export default function useArenaSocket() {
     const ws = wsRef.current;
     if (ws && ws.readyState === ws.OPEN && matchIdRef.current)
       ws.send(JSON.stringify({ type: "forfeit", matchId: matchIdRef.current }));
+  }, []);
+
+  // Pedido de "gastar combo" — quem valida se há combo suficiente é sempre o
+  // servidor (ver spendCombo em shared/arena/engine.ts); aqui é só o pedido.
+  const useCombo = useCallback(() => {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === ws.OPEN && matchIdRef.current)
+      ws.send(JSON.stringify({ type: "useCombo", matchId: matchIdRef.current }));
   }, []);
 
   const leaveQueue = useCallback(() => {
@@ -331,6 +352,7 @@ export default function useArenaSocket() {
     ratingDelta,
     submitAnswer,
     forfeit,
+    useCombo,
     leaveQueue,
     playAgain,
     disconnect,

@@ -256,6 +256,16 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
     issueNextChallenge(matchId, uid);
   }
 
+  function handleUseCombo(ws, uid, msg) {
+    limitRequest(`arena_combo:${uid}`, 60);
+    const matchId = msg?.matchId;
+    if (typeof matchId !== "string")
+      return send(ws, "error", { message: "Mensagem inválida." });
+    const result = matches.useCombo(matchId, uid);
+    if (!result) return send(ws, "error", { message: "Essa partida não está mais ativa." });
+    send(ws, "comboSpent", { matchId, spent: result.spent });
+  }
+
   function handleForfeit(uid, msg) {
     const matchId = msg?.matchId;
     const match = typeof matchId === "string" ? matches.getMatch(matchId) : null;
@@ -343,6 +353,8 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
         return queue.leave(uid);
       case "answer":
         return handleAnswer(ws, uid, msg);
+      case "useCombo":
+        return handleUseCombo(ws, uid, msg);
       case "forfeit":
         return handleForfeit(uid, msg);
       default:
