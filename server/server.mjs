@@ -16,6 +16,19 @@ import { MAX_LEVEL, modes } from "../shared/arcade.mjs";
 const hash = (t) => createHash("sha256").update(t).digest("hex");
 const day = (t) => new Date(t).toISOString().slice(0, 10);
 const SESSION_TTL_MS = 180 * 24 * 60 * 60 * 1000;
+// Sem ALLOWED_ORIGINS explícito (produção define o dela), o padrão de dev só
+// cobria "localhost" — testar pelo celular acessa o Metro pelo IP da rede
+// local (ex.: http://192.168.1.5:8081), então toda chamada HTTP normal
+// (create conta, perfil, etc.) caía em 403 "Origem não autorizada", mesmo com
+// o WebSocket da Arena Rush funcionando normalmente (upgrade não passa por
+// essa checagem, ver arena-ws.mjs). Aceita qualquer IP de rede privada nas
+// mesmas portas já usadas pelo Expo web, sem abrir pra internet.
+const DEV_LAN_ORIGIN = /^http:\/\/(localhost|127\.0\.0\.1|10(?:\.\d{1,3}){3}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2}|192\.168(?:\.\d{1,3}){2}):(?:8081|8082|8083|19006)$/;
+const explicitAllowedOrigins = process.env.ALLOWED_ORIGINS?.split(",");
+const originAllowed = (origin) =>
+  explicitAllowedOrigins
+    ? explicitAllowedOrigins.includes(origin)
+    : DEV_LAN_ORIGIN.test(origin);
 export function createApp(
   path = "data/duelou.sqlite",
   clock = () => Date.now(),
@@ -187,11 +200,7 @@ export function createApp(
       if (performance.now() - received > 1000) counters.slow++;
     });
     const origin = req.headers.origin;
-    const allowed = (
-      process.env.ALLOWED_ORIGINS ||
-      "http://localhost:8081,http://localhost:8082,http://localhost:8083,http://localhost:19006"
-    ).split(",");
-    if (origin && allowed.includes(origin))
+    if (origin && originAllowed(origin))
       res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Vary", "Origin");
     res.setHeader("Access-Control-Allow-Headers", "Authorization,Content-Type");
@@ -207,7 +216,7 @@ export function createApp(
         res.writeHead(204);
         return res.end();
       }
-      if (origin && !allowed.includes(origin))
+      if (origin && !originAllowed(origin))
         fail(403, "Origem não autorizada");
       const now = clock();
       const url = new URL(req.url, "http://local"),
