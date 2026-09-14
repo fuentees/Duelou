@@ -12,6 +12,7 @@ import {
   ArcadeMode,
   MAX_LEVEL,
   levelDetails,
+  ROOM_CAPACITIES,
 } from "../../shared/arcade.mjs";
 import { palette } from "../theme";
 import Button from "../components/Button";
@@ -352,11 +353,10 @@ export default function BrowseView(p: Props) {
               <SegmentedControl
                 value={String(p.capacity)}
                 onChange={(n) => p.setCapacity(Number(n))}
-                items={[
-                  { id: "2", label: "2 pessoas" },
-                  { id: "4", label: "4 pessoas" },
-                  { id: "6", label: "6 pessoas" },
-                ]}
+                items={ROOM_CAPACITIES.map((n) => ({
+                  id: String(n),
+                  label: `${n} pessoas`,
+                }))}
               />
               <Text style={v.description}>
                 Até três provas. Empate em vitórias termina empatado.
