@@ -114,6 +114,18 @@ export const s = StyleSheet.create({
     paddingVertical: 10,
     gap: 12,
   },
+  // Cabeçalho do perfil (Ticket 34) — gradients.hero já é o fundo do
+  // AppHeader logo acima; usar cardActive aqui em vez de repetir o mesmo
+  // gradiente forte duas vezes seguidas na tela.
+  heroCard: {
+    alignItems: "center",
+    gap: 8,
+    padding: 20,
+    borderRadius: radius.xl,
+    ...shadow.soft,
+  },
+  heroName: { fontSize: 24, fontWeight: "900", color: palette.text },
+  heroCompetitive: { fontSize: 13, fontWeight: "700", color: palette.textDim },
   track: {
     height: 6,
     borderRadius: 5,

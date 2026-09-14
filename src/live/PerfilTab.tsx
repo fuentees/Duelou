@@ -1,8 +1,10 @@
 import CharacterEditor from "../components/CharacterEditor";
+import Character from "../components/Character";
 import React, { useEffect, useRef, useState } from "react";
 import { captureSession } from "../api";
 import { Text, View } from "react-native";
-import { palette, shadow } from "../theme";
+import { LinearGradient } from "expo-linear-gradient";
+import { gradients, palette, shadow } from "../theme";
 import { modes } from "../../shared/arcade.mjs";
 import Button from "../components/Button";
 import Card from "../components/Card";
@@ -20,7 +22,7 @@ type Achievement = {
 };
 type Profile = {
   id: string;
-  avatar?:unknown;
+  avatar?: unknown;
   name: string;
   weekly?: { name: string; current: number; target: number }[];
   competitive?: { rank: string; rating: number; provisional: boolean } | null;
@@ -46,7 +48,7 @@ export default function PerfilTab({
   deleting: boolean;
   setDeleting: (v: boolean) => void;
   onSignOut: () => void;
-  onProfileUpdated:(profile:any)=>void;
+  onProfileUpdated: (profile: any) => void;
   onDeleteAccount: () => void;
 }) {
   const [older, setOlder] = useState<any[]>([]);
@@ -86,15 +88,26 @@ export default function PerfilTab({
   };
   return (
     <>
-      <View style={s.between}>
-        <Text style={s.hero}>{profile.name}</Text>
-        <Text style={s.accent}>
+      <LinearGradient colors={gradients.cardActive} style={s.heroCard}>
+        <Character
+          avatar={profile.avatar}
+          size={64}
+          label={`Personagem de ${profile.name}`}
+        />
+        <Text style={s.heroName}>{profile.name}</Text>
+        <RankBadge level={profile.level} />
+        <Text style={s.heroCompetitive}>
           {profile.competitive
             ? `${profile.competitive.rank} · ${profile.competitive.rating}${profile.competitive.provisional ? " · colocação" : ""}`
-            : "Sem classificação"}
+            : "Sem classificação competitiva"}
         </Text>
-      </View>
-      <CharacterEditor key={profile.id} uid={profile.id} avatar={profile.avatar} onSaved={onProfileUpdated}/>
+      </LinearGradient>
+      <CharacterEditor
+        key={profile.id}
+        uid={profile.id}
+        avatar={profile.avatar}
+        onSaved={onProfileUpdated}
+      />
       <Card>
         <Text style={s.heading}>Conexão e permissões</Text>
         <Text style={s.muted}>
