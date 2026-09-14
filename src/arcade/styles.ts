@@ -168,6 +168,33 @@ export const s = StyleSheet.create({
   },
   presenceOn: { backgroundColor: "#DCFCE7" },
   presenceOff: { backgroundColor: "#FEE2E2" },
+  // Sala de turma (Ticket 30) — acima de ~6 membros, o lobby/placar trocam
+  // a lista de uma linha por membro por um grid compacto, senão vira uma
+  // lista longa demais pra rolar numa turma de 30.
+  memberGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  memberGridItem: {
+    flexBasis: "30%",
+    minWidth: 88,
+    alignItems: "center",
+    gap: 2,
+    padding: 8,
+    borderRadius: radius.sm,
+    backgroundColor: palette.surfaceAlt,
+  },
+  memberGridName: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: palette.text,
+    textAlign: "center",
+  },
+  memberGridDetail: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: palette.textFaint,
+    textAlign: "center",
+  },
+  presenceTextOn: { color: palette.green },
+  presenceTextOff: { color: palette.red },
   game: {
     padding: 16,
     borderWidth: 1.5,

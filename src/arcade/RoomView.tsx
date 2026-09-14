@@ -193,24 +193,50 @@ export default function RoomView({
               : `${room.members.length} de ${room.capacity} jogadores. O anfitrião pode começar com pelo menos dois conectados.`}
           </Text>
           <Card>
-            {room.members.map((m) => (
-              <View style={s.row} key={m.id}>
-                <Text style={s.member}>
-                  {m.name}
-                  {m.id === room.host ? " · anfitrião" : ""}
-                </Text>
-                <View
-                  style={[
-                    s.presencePill,
-                    m.online ? s.presenceOn : s.presenceOff,
-                  ]}
-                >
-                  <Text style={s.caption}>
-                    {m.online ? "Presente" : "Ausente"}
-                  </Text>
-                </View>
+            {room.members.length > 6 ? (
+              <View style={s.memberGrid}>
+                {room.members.map((m) => (
+                  <View key={m.id} style={s.memberGridItem}>
+                    <Text style={s.memberGridName} numberOfLines={1}>
+                      {m.name}
+                    </Text>
+                    {/* Símbolo (✓/–) além da cor — presença não pode depender só de
+                        verde/vermelho pra quem não distingue bem as duas cores. */}
+                    <Text
+                      style={[
+                        s.memberGridDetail,
+                        m.online ? s.presenceTextOn : s.presenceTextOff,
+                      ]}
+                      accessibilityLabel={m.online ? "Presente" : "Ausente"}
+                    >
+                      {m.online ? "✓ presente" : "– ausente"}
+                    </Text>
+                    {m.id === room.host && (
+                      <Text style={s.memberGridDetail}>anfitrião</Text>
+                    )}
+                  </View>
+                ))}
               </View>
-            ))}
+            ) : (
+              room.members.map((m) => (
+                <View style={[s.row,{flexWrap:"wrap"}]} key={m.id}>
+                  <Text style={s.member}>
+                    {m.name}
+                    {m.id === room.host ? " · anfitrião" : ""}
+                  </Text>
+                  <View
+                    style={[
+                      s.presencePill,
+                      m.online ? s.presenceOn : s.presenceOff,
+                    ]}
+                  >
+                    <Text style={s.caption}>
+                      {m.online ? "Presente" : "Ausente"}
+                    </Text>
+                  </View>
+                </View>
+              ))
+            )}
           </Card>
           {room.ranked && (
             <Button secondary onPress={onQueuePractice}>
@@ -340,37 +366,50 @@ export default function RoomView({
             </>
           )}
           {room.state === "finished" && room.gamesNeeded > 1
-            ? room.members.map((m, i) => (
-                <View key={m.id} style={s.row}>
-                  <Text style={s.member}>
-                    {`${1 + room.members.filter((other) => other.seriesWins > m.seriesWins).length}. `}
-                    {m.name}
-                  </Text>
-                  <Text style={s.member}>
-                    {m.seriesWins} de {room.gamesNeeded} provas
-                  </Text>
-                </View>
-              ))
-            : room.members.map((m, i) => (
-                <View key={m.id} style={s.row}>
-                  <Text style={s.member}>
-                    {m.score !== null
-                      ? `${1 + room.members.filter((other) => (other.score ?? -1) > m.score!).length}. `
-                      : ""}
-                    {m.name}
-                  </Text>
-                  <Text style={s.member}>
-                    {m.score === null
-                      ? room.state === "finished"
-                        ? "Não concluiu"
-                        : "Jogando…"
-                      : `${m.score} pts${m.durationMs !== null ? ` · ${(m.durationMs / 1000).toFixed(1)}s total` : ""}`}
-                  </Text>
-                </View>
-              ))}
+            ? room.members.map((m) => {
+                const rank = 1 + room.members.filter((other) => other.seriesWins > m.seriesWins).length;
+                const medalPrefix = medal(rank - 1);
+                return (
+                  <View key={m.id} style={[s.row,{flexWrap:"wrap"}]}>
+                    <Text style={s.member}>
+                      {medalPrefix ? `${medalPrefix} ` : ""}
+                      {`${rank}. `}
+                      {m.name}
+                    </Text>
+                    <Text style={s.member}>
+                      {m.seriesWins} de {room.gamesNeeded} provas
+                    </Text>
+                  </View>
+                );
+              })
+            : room.members.map((m) => {
+                // Mais pontos vence; empatado, quem respondeu mais rápido fica na frente.
+                const rank = m.score !== null
+                  ? 1 + room.members.filter((other) => (other.score ?? -1) > m.score! || ((other.score ?? -1) === m.score && (other.durationMs ?? Infinity) < (m.durationMs ?? Infinity))).length
+                  : null;
+                const medalPrefix = rank !== null ? medal(rank - 1) : "";
+                return (
+                  <View key={m.id} style={[s.row,{flexWrap:"wrap"}]}>
+                    <Text style={s.member}>
+                      {rank !== null
+                        ? `${medalPrefix ? medalPrefix + " " : ""}${rank}. `
+                        : ""}
+                      {m.name}
+                    </Text>
+                    <Text style={s.member}>
+                      {m.score === null
+                        ? room.state === "finished"
+                          ? "Não concluiu"
+                          : "Jogando…"
+                        : `${m.score} pts${m.durationMs !== null ? ` · ${(m.durationMs / 1000).toFixed(1)}s total` : ""}`}
+                    </Text>
+                  </View>
+                );
+              })}
           <Text style={s.caption}>
-            Mais pontos vence a prova. Pontuação igual é empate, sem desempate
-            pela conexão.{" "}
+            Mais pontos vence a prova. Se a pontuação empatar, vence quem
+            concluir primeiro no servidor. Pontuação e tempo iguais mantêm o
+            empate.{" "}
             {room.ranked
               ? "Só esta fila oficial altera sua classificação."
               : "Sala casual: não altera a classificação competitiva."}
