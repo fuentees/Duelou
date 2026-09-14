@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { WS_URL, getSessionToken } from "../api";
-import type { ArenaState, Side } from "../../shared/arena/engine";
+import type { ArenaState, Side, TroopType } from "../../shared/arena/engine";
 import type { PublicArenaChallenge } from "./challenges";
 import { toViewerPerspective } from "./perspective";
 import { RECONNECT_BACKOFF_MS, RECONNECT_GRACE_MS } from "../../shared/arena/reconnect";
@@ -15,6 +15,13 @@ export type ArenaSocketPhase =
   | "ended"
   | "error";
 export type AnswerSubmission = { index: number } | { tapped: true };
+export type ArenaAnswerFeedback = {
+  seq: number;
+  correct: boolean;
+  troopType: TroopType | null;
+  // false com correct=true: acertou, mas a pista já estava no teto de tropas.
+  spawned: boolean;
+};
 
 // Conecta na Arena Rush online (server/arena-ws.mjs) e entra na fila
 // automaticamente ao abrir — quem usa esse hook já decidiu "quero um
@@ -50,6 +57,11 @@ export default function useArenaSocket() {
   // informativo: quem desconta a rede do tempo de resposta é o servidor,
   // nunca o cliente (ver server/arena-latency.mjs).
   const [rttMs, setRttMs] = useState<number | null>(null);
+  // Último veredito com o que ele produziu em campo — a tela usa isso pro
+  // retorno imediato ("Tanque invocado", "pista cheia"). `seq` existe porque
+  // dois acertos seguidos idênticos precisam disparar o aviso duas vezes.
+  const [lastAnswer, setLastAnswer] = useState<ArenaAnswerFeedback | null>(null);
+  const answerSeqRef = useRef(0);
 
   // Espelham o estado mais recente pra uso dentro de closures que não são
   // recriadas a cada render (os handlers do socket, montados uma vez por
@@ -173,8 +185,15 @@ export default function useArenaSocket() {
             if (msg.challengeId === challengeIdRef.current) setReflexGo(true);
             break;
           case "answerResult":
-            if (msg.challengeId === challengeIdRef.current)
+            if (msg.challengeId === challengeIdRef.current) {
               setVerdict({ correct: msg.correct });
+              setLastAnswer({
+                seq: ++answerSeqRef.current,
+                correct: !!msg.correct,
+                troopType: msg.troopType ?? null,
+                spawned: !!msg.spawned,
+              });
+            }
             break;
           case "state":
             if (youRef.current) setState(toViewerPerspective(msg.state, youRef.current));
@@ -279,6 +298,7 @@ export default function useArenaSocket() {
     opponentLeft,
     errorMessage,
     rttMs,
+    lastAnswer,
     submitAnswer,
     forfeit,
     leaveQueue,

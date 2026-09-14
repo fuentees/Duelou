@@ -205,6 +205,9 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
       challengeId,
       correct: result.correct,
       troopType: applied?.troopType ?? null,
+      // false + correct:true = acertou, mas a pista está no teto de tropas.
+      // O cliente avisa em vez de deixar o acerto sumir sem explicação.
+      spawned: applied?.spawned ?? false,
     });
     issueNextChallenge(matchId, uid);
   }

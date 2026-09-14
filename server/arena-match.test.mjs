@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createArenaMatchEngine } from "./arena-match.mjs";
-import { decideTroopType, FAST_CHOICE_MS } from "../shared/arena/engine.ts";
+import {
+  decideTroopType,
+  FAST_CHOICE_MS,
+  MAX_TROOPS_PER_SIDE,
+} from "../shared/arena/engine.ts";
 
 function fakeScheduler() {
   let captured = null;
@@ -187,4 +191,34 @@ test("pauseMatch/resumeMatch numa partida inexistente ou já encerrada devolve f
   assert.equal(engine.pauseMatch("m1"), false, "partida já encerrada não pode ser pausada");
   assert.equal(engine.resumeMatch("m1"), false);
   engine.stop();
+});
+
+test("acerto com a pista cheia é reportado (spawned:false) em vez de sumir sem explicação", () => {
+  const { engine } = makeEngine();
+  engine.createMatch("m1", "alice", "bob");
+  const answer = () =>
+    engine.applyAnswer("m1", "alice", { correct: true, elapsedMs: 5000, kind: "choice" });
+  for (let i = 0; i < MAX_TROOPS_PER_SIDE; i++) {
+    const result = answer();
+    assert.equal(result.spawned, true);
+  }
+  const blocked = answer();
+  assert.equal(blocked.spawned, false, "no teto, o jogador precisa saber que nada foi invocado");
+  assert.ok(blocked.troopType, "o tipo continua sendo calculado — o que faltou foi espaço, não acerto");
+
+  const state = engine.getMatch("m1").state;
+  assert.equal(state.stats.player.hits, MAX_TROOPS_PER_SIDE, "hits conta só o que entrou em campo");
+  assert.equal(
+    state.combo.player,
+    MAX_TROOPS_PER_SIDE + 1,
+    "o combo conta o acerto mesmo sem espaço na pista: o erro não foi do jogador",
+  );
+  assert.equal(state.stats.player.challengesTotal, MAX_TROOPS_PER_SIDE + 1);
+});
+
+test("resposta errada não invoca nada e diz isso explicitamente", () => {
+  const { engine } = makeEngine();
+  engine.createMatch("m1", "alice", "bob");
+  const wrong = engine.applyAnswer("m1", "alice", { correct: false, elapsedMs: 100, kind: "choice" });
+  assert.deepEqual(wrong, { troopType: null, spawned: false });
 });

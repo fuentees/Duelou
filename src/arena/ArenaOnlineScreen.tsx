@@ -9,13 +9,15 @@ import Troop from "./Troop";
 import ResultCard from "./ResultCard";
 import BattlePresentation, { BattleMember } from "../arcade/BattlePresentation";
 import { ENEMY_COLOR, PLAYER_COLOR } from "./colors";
-import type { ArenaState, Side } from "../../shared/arena/engine";
-import { playFail } from "../audio/sounds";
+import type { ArenaState, Side, TroopType } from "../../shared/arena/engine";
+import { SUDDEN_DEATH_SECONDS } from "../../shared/arena/engine";
+import { playFail, playSuccess } from "../audio/sounds";
 import useReducedMotion from "../useReducedMotion";
 import { palette, radius } from "../theme";
 import Button from "../components/Button";
 import LiveStatus from "../components/LiveStatus";
 import Battlefield from "./Battlefield";
+import { hasCompletedArenaTutorial, markArenaTutorialComplete } from "./onboarding";
 
 // Quanto tempo o "poof" fica visível depois de uma tropa sumir (ver o
 // comentário de EDGE_THRESHOLD abaixo sobre como decidimos "morreu" vs
@@ -32,6 +34,13 @@ const DANGER_THRESHOLD = 25;
 // registra o dano); combate só acontece longe da borda, porque exige uma
 // tropa inimiga no caminho.
 const EDGE_THRESHOLD = 6;
+// Quanto tempo o aviso de invocação fica na tela.
+const SUMMON_TOAST_MS = 1100;
+const TROOP_LABEL: Record<TroopType, string> = {
+  scout: "⚡ Batedor",
+  soldier: "🛡 Soldado",
+  tank: "🛡🛡 Tanque",
+};
 
 type Poof = { key: number; position: number; side: Side };
 
@@ -45,6 +54,47 @@ export default function ArenaOnlineScreen({ onExit }: { onExit?: () => void }) {
   const shakeX = useRef(new Animated.Value(0)).current;
   const prevStateRef = useRef<ArenaState | null>(null);
   const wasCriticalRef = useRef(false);
+  // Aviso curto do que a última resposta produziu em campo. Sem isso, o
+  // jogador acerta, alguma coisa nasce lá embaixo e ele não sabe o quê — e,
+  // quando a pista está no teto, não nasce nada e ele nem fica sabendo.
+  const [summon, setSummon] = useState<{ text: string; tone: "good" | "warn" } | null>(null);
+  const lastAnswerSeqRef = useRef(0);
+  // Quem nunca jogou uma partida da Arena Rush neste aparelho vê, no
+  // resultado, como cada tropa é invocada. Isso já existia no modo contra o
+  // robô e nunca tinha chegado ao PvP — que é justamente por onde todo mundo
+  // entra hoje (ver LiveApp.tsx).
+  const [isFirstMatch, setIsFirstMatch] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    hasCompletedArenaTutorial().then((done) => {
+      if (alive) setIsFirstMatch(!done);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (socket.phase === "ended") markArenaTutorialComplete();
+  }, [socket.phase]);
+
+  useEffect(() => {
+    const answer = socket.lastAnswer;
+    if (!answer || answer.seq === lastAnswerSeqRef.current) return;
+    lastAnswerSeqRef.current = answer.seq;
+    if (!answer.correct) {
+      playFail();
+      setSummon(null);
+      return;
+    }
+    if (answer.spawned) {
+      playSuccess();
+      setSummon({ text: `${TROOP_LABEL[answer.troopType ?? "scout"]} invocado`, tone: "good" });
+    } else {
+      setSummon({ text: "Pista cheia — espere abrir espaço", tone: "warn" });
+    }
+    const timer = setTimeout(() => setSummon(null), SUMMON_TOAST_MS);
+    return () => clearTimeout(timer);
+  }, [socket.lastAnswer]);
 
   useEffect(() => {
     const prev = prevStateRef.current;
@@ -152,6 +202,7 @@ export default function ArenaOnlineScreen({ onExit }: { onExit?: () => void }) {
           )}
           <ResultCard
             state={state}
+            showTutorialInfo={isFirstMatch}
             avatar={socket.me?.avatar}
             playerName={socket.me?.name}
             comeback={state.winner === "player" && wasCriticalRef.current}
@@ -203,6 +254,11 @@ export default function ArenaOnlineScreen({ onExit }: { onExit?: () => void }) {
             <Text style={s.reconnectingBannerText}>Reconectando você à partida…</Text>
           </View>
         )}
+        {state.timeRemaining <= SUDDEN_DEATH_SECONDS && !state.over && (
+          <Text style={s.suddenDeath} accessibilityLiveRegion="polite">
+            ⚡ MORTE SÚBITA · DANO NA BASE VALE O DOBRO
+          </Text>
+        )}
         <HealthBar
           label="BASE INIMIGA"
           hp={state.enemyBaseHp}
@@ -221,6 +277,14 @@ export default function ArenaOnlineScreen({ onExit }: { onExit?: () => void }) {
           {state.troops.map((troop) => (
             <Troop key={troop.id} troop={troop} laneHeight={laneHeight} />
           ))}
+          {summon && (
+            <Text
+              accessibilityLiveRegion="polite"
+              style={[s.summon, summon.tone === "warn" ? s.summonWarn : s.summonGood]}
+            >
+              {summon.text}
+            </Text>
+          )}
           {poofs.map((p) => (
             <Text
               key={p.key}
@@ -248,10 +312,15 @@ export default function ArenaOnlineScreen({ onExit }: { onExit?: () => void }) {
           <View style={s.opponentNameRow}>
             <Text style={s.caption}>{socket.opponent?.name || "Adversário"}</Text>
             {socket.opponentReconnecting && <LiveStatus mode="inline" state="reconnecting" />}
+            {/* Ver o combo do rival é metade da tensão de um 1×1: o dado já
+                chegava pelo socket e não aparecia em lugar nenhum. */}
+            {state.combo.enemy >= 2 && (
+              <Text style={s.enemyCombo}>🔥 x{state.combo.enemy}</Text>
+            )}
           </View>
           {state.combo.player >= 2 && (
             <Text style={s.combo} accessibilityLiveRegion="polite">
-              🔥 combo x{state.combo.player}
+              🔥 SEU COMBO x{state.combo.player}
             </Text>
           )}
         </View>
@@ -283,6 +352,28 @@ const s = StyleSheet.create({
   caption: { fontSize: 12, fontWeight: "700", color: palette.textFaint, flexShrink: 1 },
   combo: { fontSize: 13, fontWeight: "900", color: palette.amber },
   ping: { fontSize: 11, fontWeight: "800", fontVariant: ["tabular-nums"] },
+  enemyCombo: { fontSize: 12, fontWeight: "900", color: ENEMY_COLOR },
+  suddenDeath: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: palette.red,
+    textAlign: "center",
+    letterSpacing: 0.5,
+  },
+  summon: {
+    position: "absolute",
+    left: 8,
+    right: 8,
+    bottom: 8,
+    textAlign: "center",
+    fontSize: 13,
+    fontWeight: "900",
+    paddingVertical: 6,
+    borderRadius: radius.sm,
+    overflow: "hidden",
+  },
+  summonGood: { color: "#FFFFFF", backgroundColor: PLAYER_COLOR },
+  summonWarn: { color: "#3A2A00", backgroundColor: palette.amber },
   opponentLeft: { fontSize: 13, fontWeight: "700", color: palette.textDim, textAlign: "center" },
   reconnectingBanner: {
     flexDirection: "row",

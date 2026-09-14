@@ -23,6 +23,12 @@ export const TROOP_CONFIG: Record<TroopType, TroopConfig> = {
 };
 
 export const MAX_TROOPS_PER_SIDE = 10;
+// Últimos segundos: todo dano à base vale dobrado. Sem isso, quem abria
+// vantagem cedo só precisava empilhar tanques no meio da pista e deixar o
+// relógio correr — a estratégia dominante era travar a partida, que é o
+// oposto do que um 1×1 de 100 segundos deveria premiar.
+export const SUDDEN_DEATH_SECONDS = 20;
+export const SUDDEN_DEATH_MULTIPLIER = 2;
 // Espaço mínimo entre duas tropas do mesmo lado na pista (0-100), pra não
 // ficarem sobrepostas nem quando uma fila inteira está parada atrás da linha
 // de frente engajada em combate.
@@ -191,8 +197,10 @@ export function step(
   const arrived = state.troops.filter(
     (t) => (t.side === "player" && t.position >= 100) || (t.side === "enemy" && t.position <= 0),
   );
+  const suddenDeath = state.timeRemaining <= SUDDEN_DEATH_SECONDS;
   for (const t of arrived) {
-    const dmg = TROOP_CONFIG[t.type].baseDamage;
+    const dmg =
+      TROOP_CONFIG[t.type].baseDamage * (suddenDeath ? SUDDEN_DEATH_MULTIPLIER : 1);
     if (t.side === "player") state.enemyBaseHp = Math.max(0, state.enemyBaseHp - dmg);
     else state.playerBaseHp = Math.max(0, state.playerBaseHp - dmg);
     events.push({
@@ -217,13 +225,30 @@ export function step(
           : state.enemyBaseHp <= 0
             ? "player"
             : state.playerBaseHp === state.enemyBaseHp
-              ? "draw"
+              ? decideByPerformance(state)
               : state.playerBaseHp > state.enemyBaseHp
                 ? "player"
                 : "enemy";
     events.push({ type: "matchOver", winner: state.winner });
   }
   return events;
+}
+
+// Desempate quando o tempo acaba com as duas bases na mesma vida. "Empate"
+// como primeira resposta é frustrante em 1×1: os dois jogaram a partida
+// inteira e ninguém leva nada. Então antes disso vale, em ordem, quem tem
+// mais tropa viva em campo (pressão no fim), quem fez o maior combo e quem
+// invocou mais. Só se tudo empatar é empate de verdade.
+function decideByPerformance(state: ArenaState): Side | "draw" {
+  const alive = (side: Side) => state.troops.reduce((n, t) => n + (t.side === side ? 1 : 0), 0);
+  const criteria: [number, number][] = [
+    [alive("player"), alive("enemy")],
+    [state.stats.player.maxCombo, state.stats.enemy.maxCombo],
+    [state.stats.player.hits, state.stats.enemy.hits],
+  ];
+  for (const [mine, theirs] of criteria)
+    if (mine !== theirs) return mine > theirs ? "player" : "enemy";
+  return "draw";
 }
 
 // Regra de invocação, compartilhada entre o cliente offline (contra bot) e o

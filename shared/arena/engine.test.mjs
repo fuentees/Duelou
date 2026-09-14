@@ -7,6 +7,8 @@ import {
   step,
   TROOP_CONFIG,
   MAX_TROOPS_PER_SIDE,
+  SUDDEN_DEATH_MULTIPLIER,
+  SUDDEN_DEATH_SECONDS,
 } from "./engine.ts";
 
 const noRandom = () => 0.5; // sem variação de dano, deixa os testes previsíveis
@@ -116,4 +118,64 @@ test("tropas do mesmo lado nunca se sobrepõem, mesmo em fila", () => {
     for (let j = 1; j < positions.length; j++)
       assert.ok(positions[j] - positions[j - 1] >= 3.9, "tropas do mesmo lado não podem quase se sobrepor");
   }
+});
+
+test("morte súbita: nos últimos segundos o dano à base vale dobrado", () => {
+  const normal = createArenaState(100);
+  spawn(normal, "player", "scout");
+  normal.troops[0].position = 99.9;
+  const normalEvents = step(normal, 0.1, noRandom);
+  assert.equal(
+    normalEvents.find((e) => e.type === "baseHit").dmg,
+    TROOP_CONFIG.scout.baseDamage,
+  );
+
+  const ending = createArenaState(SUDDEN_DEATH_SECONDS);
+  spawn(ending, "player", "scout");
+  ending.troops[0].position = 99.9;
+  const endingEvents = step(ending, 0.1, noRandom);
+  assert.equal(
+    endingEvents.find((e) => e.type === "baseHit").dmg,
+    TROOP_CONFIG.scout.baseDamage * SUDDEN_DEATH_MULTIPLIER,
+    "travar a partida no fim não pode ser a melhor jogada",
+  );
+  assert.equal(
+    ending.enemyBaseHp,
+    100 - TROOP_CONFIG.scout.baseDamage * SUDDEN_DEATH_MULTIPLIER,
+  );
+});
+
+test("tempo esgotado com bases empatadas: decide por tropa em campo, combo e invocações", () => {
+  const byTroops = createArenaState(0.05);
+  spawn(byTroops, "player", "scout");
+  step(byTroops, 0.1, noRandom);
+  assert.equal(byTroops.over, true);
+  assert.equal(byTroops.winner, "player", "quem terminou com tropa em campo leva");
+
+  const byCombo = createArenaState(0.05);
+  byCombo.stats.enemy.maxCombo = 5;
+  byCombo.stats.player.maxCombo = 2;
+  step(byCombo, 0.1, noRandom);
+  assert.equal(byCombo.winner, "enemy");
+
+  const byHits = createArenaState(0.05);
+  byHits.stats.player.maxCombo = 3;
+  byHits.stats.enemy.maxCombo = 3;
+  byHits.stats.player.hits = 9;
+  byHits.stats.enemy.hits = 7;
+  step(byHits, 0.1, noRandom);
+  assert.equal(byHits.winner, "player");
+
+  // Empate de verdade continua existindo: duas partidas idênticas em tudo.
+  const tie = createArenaState(0.05);
+  step(tie, 0.1, noRandom);
+  assert.equal(tie.winner, "draw");
+});
+
+test("spawn avisa quando a pista está cheia, em vez de engolir o acerto", () => {
+  const state = createArenaState(100);
+  for (let i = 0; i < MAX_TROOPS_PER_SIDE; i++)
+    assert.equal(spawn(state, "player", "scout"), true);
+  assert.equal(spawn(state, "player", "scout"), false, "no teto, spawn precisa devolver false");
+  assert.equal(spawn(state, "enemy", "scout"), true, "o teto é por lado, não da pista inteira");
 });
