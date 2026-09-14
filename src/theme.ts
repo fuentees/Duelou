@@ -56,6 +56,21 @@ export const shadow = {
     elevation: 8,
   }),
 };
+// Clareia (amount > 0) ou escurece (amount < 0) uma cor em direção a
+// branco/preto — usado pelo personagem (Character.tsx, Ticket 32) pra
+// simular luz e sombra numa superfície curva sem precisar de motor 3D.
+export function shade(hex: string, amount: number): string {
+  const n = hex.replace("#", "");
+  const target = amount > 0 ? 255 : 0;
+  const t = Math.min(1, Math.abs(amount));
+  const channel = (i: number) => {
+    const v = parseInt(n.slice(i, i + 2), 16);
+    return Math.round(v + (target - v) * t)
+      .toString(16)
+      .padStart(2, "0");
+  };
+  return `#${channel(0)}${channel(2)}${channel(4)}`;
+}
 export function contrastText(hex: string): string {
   const n = hex.replace("#", "");
   const luminance = (color: string) => {
