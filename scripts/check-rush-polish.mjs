@@ -37,7 +37,9 @@ try {
       await route.fulfill({ response: await route.fetch({ url: base + url.pathname + url.search }) });
     });
     await page.goto("http://localhost:8083");
-    await page.getByRole("button", { name: "Conhecer Arena Rush", exact: true }).click();
+    // Pela barra de baixo: o cartão da tela inicial troca de texto quando a
+    // conta já tem duelos ("Duelar agora"), então não serve de âncora fixa.
+    await page.getByRole("button", { name: "Duelo", exact: true }).click();
     await page.getByRole("button", { name: "Buscar adversário", exact: true }).waitFor();
     await checkLayout(page);
     if (!index) await page.screenshot({ path: "work/rush-lobby.png", fullPage: true });
