@@ -9,13 +9,15 @@ import { attachArenaRealtime } from "./arena-ws.mjs";
 // pra usar relógio/scheduler falso aqui — o motor autoritativo roda num
 // setInterval de verdade). Por isso a partida usa durationSeconds bem
 // curto, só pra terminar rápido dentro do teste.
-async function withServer(fn) {
+async function withServer(fn, options = {}) {
   const app = createApp(":memory:", Date.now);
   await new Promise((r) => app.server.listen(0, "127.0.0.1", r));
   const port = app.server.address().port;
   const realtime = attachArenaRealtime(app.server, app.db, Date.now, {
     countdownMs: 50,
     durationSeconds: 3,
+    reconnectGraceMs: 300,
+    ...options,
   });
   const base = "http://127.0.0.1:" + port;
   const wsBase = "ws://127.0.0.1:" + port;
@@ -148,7 +150,7 @@ test("conexão sem token (ou com token inválido) é rejeitada no handshake", as
   });
 });
 
-test("fechar a conexão em partida ativa: o outro jogador recebe opponentLeft + matchOver e vence na hora", async () => {
+test("fechar a conexão sem reconectar: opponentDisconnected primeiro, depois matchOver por timeout de reconexão", async () => {
   await withServer(async ({ app, call, wsBase }) => {
     const a = (await call("/v1/guests", null, { name: "Alice3" })).data;
     const b = (await call("/v1/guests", null, { name: "Bob3" })).data;
@@ -166,20 +168,118 @@ test("fechar a conexão em partida ativa: o outro jogador recebe opponentLeft + 
     const foundA = await waitFor(msgsA, "matchFound");
     const foundB = await waitFor(msgsB, "matchFound");
 
-    // Alice cai (fecha a conexão) antes da partida terminar sozinha.
+    // Alice cai (fecha a conexão) e nunca mais volta.
     wsA.close();
 
-    const left = await waitFor(msgsB, "opponentLeft");
-    assert.equal(left.matchId, foundA.matchId);
-    const over = await waitFor(msgsB, "matchOver");
+    const disconnected = await waitFor(msgsB, "opponentDisconnected");
+    assert.equal(disconnected.matchId, foundA.matchId);
+    assert.ok(disconnected.expiresAt > Date.now(), "expiresAt deveria ser no futuro");
+
+    // withServer usa reconnectGraceMs:300 — bem menor que o padrão de
+    // produção (20s), só pra este teste não demorar.
+    const over = await waitFor(msgsB, "matchOver", 3000);
     // Bob é "enemy" (ver protocolo: quem chama startMatch(opponent, uid)
     // passa quem emparelhou primeiro como side "player") — o importante é
     // que quem ficou (Bob) seja sempre o vencedor, não um lado fixo.
     assert.equal(over.winner, foundB.you);
 
     const row = app.db.prepare("SELECT * FROM arena_matches WHERE id=?").get(foundA.matchId);
-    assert.equal(row.reason, "disconnect");
+    assert.equal(row.reason, "disconnect_timeout");
 
+    wsB.close();
+  });
+});
+
+test("reconectar dentro do prazo resume a partida sem passar pela fila de novo", async () => {
+  await withServer(async ({ call, wsBase }) => {
+    const a = (await call("/v1/guests", null, { name: "AliceReconnect" })).data;
+    const b = (await call("/v1/guests", null, { name: "BobReconnect" })).data;
+    const wsA = connect(wsBase, a.token);
+    const wsB = connect(wsBase, b.token);
+    await Promise.all([
+      new Promise((r) => wsA.once("open", r)),
+      new Promise((r) => wsB.once("open", r)),
+    ]);
+    const msgsA = collect(wsA);
+    const msgsB = collect(wsB);
+    wsA.send(JSON.stringify({ type: "queue" }));
+    await waitFor(msgsA, "queued");
+    wsB.send(JSON.stringify({ type: "queue" }));
+    const foundA = await waitFor(msgsA, "matchFound");
+    await waitFor(msgsB, "matchFound");
+
+    wsA.close();
+    await waitFor(msgsB, "opponentDisconnected");
+
+    // Reconecta com o mesmo token, bem dentro da janela de 300ms. collect()
+    // logo após connect() (antes de esperar "open") — matchResumed chega
+    // automaticamente assim que a conexão é aceita, sem esperar nenhuma
+    // mensagem do cliente; um listener registrado depois desse instante
+    // perderia a mensagem.
+    const wsA2 = connect(wsBase, a.token);
+    const msgsA2 = collect(wsA2);
+    await new Promise((r) => wsA2.once("open", r));
+    wsA2.send(JSON.stringify({ type: "queue" })); // reflexo do cliente de verdade
+
+    const resumed = await waitFor(msgsA2, "matchResumed");
+    assert.equal(resumed.matchId, foundA.matchId);
+    assert.equal(resumed.you, foundA.you);
+    assert.ok(resumed.state, "matchResumed deveria trazer o estado atual da partida");
+    // O "queue" reflexo não deveria ter jogado a Alice numa fila/partida nova.
+    assert.equal(msgsA2.some((m) => m.type === "matchFound"), false);
+
+    await waitFor(msgsB, "opponentReconnected");
+
+    // Passa bem da janela de reconexão (300ms) sem ninguém ser desistido —
+    // prova que resumeMatch() realmente cancelou o forfeit agendado.
+    await new Promise((r) => setTimeout(r, 500));
+    assert.equal(msgsA2.some((m) => m.type === "matchOver"), false);
+    assert.equal(msgsB.some((m) => m.type === "matchOver"), false);
+
+    wsA2.close();
+    wsB.close();
+  });
+});
+
+test("fechar 1 de 2 abas da mesma conta não afeta a partida (nem faz o outro lado ficar mudo)", async () => {
+  await withServer(async ({ call, wsBase }) => {
+    const a = (await call("/v1/guests", null, { name: "AliceDuasAbas" })).data;
+    const b = (await call("/v1/guests", null, { name: "BobDuasAbas" })).data;
+    const wsA1 = connect(wsBase, a.token);
+    const wsB = connect(wsBase, b.token);
+    await Promise.all([
+      new Promise((r) => wsA1.once("open", r)),
+      new Promise((r) => wsB.once("open", r)),
+    ]);
+    const msgsA1 = collect(wsA1);
+    const msgsB = collect(wsB);
+    wsA1.send(JSON.stringify({ type: "queue" }));
+    await waitFor(msgsA1, "queued");
+    wsB.send(JSON.stringify({ type: "queue" }));
+    await waitFor(msgsA1, "matchFound");
+    await waitFor(msgsB, "matchFound");
+
+    // Alice abre uma segunda aba (mesma conta) e fecha a primeira. collect()
+    // logo após connect() — matchResumed chega assim que a conexão é
+    // aceita, antes de qualquer "open"/mensagem do cliente.
+    const wsA2 = connect(wsBase, a.token);
+    const msgsA2 = collect(wsA2);
+    await new Promise((r) => wsA2.once("open", r));
+    await waitFor(msgsA2, "matchResumed");
+    wsA1.close();
+
+    // Ninguém deveria ver opponentDisconnected — ainda sobra a aba 2.
+    await new Promise((r) => setTimeout(r, 400));
+    assert.equal(msgsB.some((m) => m.type === "opponentDisconnected"), false);
+
+    // E a partida continua "falando" com Bob (broadcasts de "state" não
+    // pararam) — prova que fechar 1 de 2 abas não deixa a partida muda.
+    const stateCountBefore = msgsB.filter((m) => m.type === "state").length;
+    await new Promise((r) => setTimeout(r, 300));
+    const stateCountAfter = msgsB.filter((m) => m.type === "state").length;
+    assert.ok(stateCountAfter > stateCountBefore, "broadcasts de state deveriam continuar chegando");
+
+    wsA2.close();
     wsB.close();
   });
 });
@@ -277,10 +377,11 @@ test("conta excluída (DELETE /v1/me) em partida ativa não derruba o servidor p
     assert.equal(deleted.status, 200);
     wsA.close();
 
-    // Bob deveria ganhar por desistência (Alice "caiu") sem o servidor cair
-    // — se tivesse caído, esta chamada HTTP comum já falharia.
-    await waitFor(msgsB, "opponentLeft");
-    await waitFor(msgsB, "matchOver");
+    // Bob deveria ganhar por desistência (Alice "caiu" e nunca reconecta,
+    // já que a conta nem existe mais) sem o servidor cair — se tivesse
+    // caído, esta chamada HTTP comum já falharia.
+    await waitFor(msgsB, "opponentDisconnected");
+    await waitFor(msgsB, "matchOver", 3000);
     const health = await call("/health", null);
     assert.equal(health.status, 200, "servidor deveria continuar respondendo normalmente");
 

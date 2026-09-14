@@ -16,6 +16,7 @@ import { createArenaChallenges } from "./arena-challenges.mjs";
 import { createArenaMatchEngine } from "./arena-match.mjs";
 import { createArenaPersistence } from "./arena-persistence.mjs";
 import { createArenaQueue } from "./arena-queue.mjs";
+import { RECONNECT_GRACE_MS } from "../shared/arena/reconnect.ts";
 
 const hash = (t) => createHash("sha256").update(t).digest("hex");
 const PATH = "/v1/arena-realtime";
@@ -26,7 +27,11 @@ const PATH = "/v1/arena-realtime";
 const MAX_SOCKETS_PER_PLAYER = 2;
 
 export function attachArenaRealtime(server, db, clock = Date.now, options = {}) {
-  const { countdownMs = 3000, durationSeconds = 100 } = options;
+  const {
+    countdownMs = 3000,
+    durationSeconds = 100,
+    reconnectGraceMs = RECONNECT_GRACE_MS,
+  } = options;
 
   const wss = new WebSocketServer({ noServer: true });
   const limitRequest = rateLimiter(clock);
@@ -39,6 +44,7 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
   const matchSockets = new Map(); // matchId -> Map(uid -> ws)
   const activeMatchOf = new Map(); // uid -> matchId, só enquanto em partida/contagem
   const challengeOwner = new Map(); // challengeId -> { matchId, uid } (tamper guard)
+  const disconnectTimers = new Map(); // uid -> { matchId, handle } (grace period pendente)
 
   function playerRow(uid) {
     return db.prepare("SELECT id,name,avatar FROM players WHERE id=?").get(uid);
@@ -78,6 +84,12 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
       if (owner.matchId === matchId) {
         challenges.discard(cid);
         challengeOwner.delete(cid);
+      }
+    }
+    for (const [pendingUid, entry] of disconnectTimers) {
+      if (entry.matchId === matchId) {
+        clearTimeout(entry.handle);
+        disconnectTimers.delete(pendingUid);
       }
     }
     const [playerAId, playerBId] = match.playerIds;
@@ -187,19 +199,67 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
 
   /**
    * Chamado quando o socket de `uid` cai (aba fechada, app derrubado, sem
-   * internet). Decisão já tomada com o usuário: sem tolerância — o outro
-   * lado vence na hora. `opponentLeft` avisa a queda antes do `matchOver`
-   * (disparado por matches.forfeit -> o listener "matchOver" já registrado)
-   * trazer o resultado.
+   * internet). Decisão revisada pelo usuário (Ticket 39 — reverte o Ticket
+   * 20): em vez de desistência na hora, a partida pausa (matches.pauseMatch,
+   * congela sozinho) e espera `reconnectGraceMs` por uma reconexão antes de
+   * desistir de verdade. `opponentDisconnected` avisa o outro lado com o
+   * prazo; se `uid` reconectar a tempo (ver wss.on("connection")), o timer é
+   * cancelado e a partida retoma de onde parou.
    */
   function handleDisconnect(uid) {
+    // Ainda tem outra aba/dispositivo da mesma conta conectado — não é uma
+    // queda de verdade (bug corrigido de brinde: antes, fechar 1 de 2 abas
+    // já derrubava a partida inteira).
+    if (socketsByPlayer.get(uid)?.size) return;
     const matchId = activeMatchOf.get(uid);
     if (!matchId) return;
     const match = matches.getMatch(matchId);
     if (!match || match.ended) return;
+
+    matches.pauseMatch(matchId);
     const remainingUid = match.playerIds.find((id) => id !== uid);
-    send(matchSockets.get(matchId)?.get(remainingUid), "opponentLeft", { matchId });
-    matches.forfeit(matchId, match.sideOf.get(uid), "disconnect");
+    send(matchSockets.get(matchId)?.get(remainingUid), "opponentDisconnected", {
+      matchId,
+      expiresAt: clock() + reconnectGraceMs,
+    });
+    const handle = setTimeout(() => {
+      disconnectTimers.delete(uid);
+      const stillActive = matches.getMatch(matchId);
+      if (!stillActive || stillActive.ended) return;
+      matches.forfeit(matchId, stillActive.sideOf.get(uid), "disconnect_timeout");
+    }, reconnectGraceMs);
+    disconnectTimers.set(uid, { matchId, handle });
+  }
+
+  /**
+   * Chamado quando uma conexão nova chega de um uid que já tinha uma
+   * partida ativa — religa o socket nela (o cliente reflexivamente manda
+   * "queue" ao abrir, mas isso vira só um erro inofensivo já que
+   * activeMatchOf continua marcado). Se havia um timer de desistência
+   * pendente pra esse uid especificamente, cancela e retoma a partida.
+   */
+  function tryResumeMatch(uid, ws) {
+    const matchId = activeMatchOf.get(uid);
+    if (!matchId) return;
+    const match = matches.getMatch(matchId);
+    if (!match || match.ended) return;
+    matchSockets.get(matchId)?.set(uid, ws);
+
+    const pending = disconnectTimers.get(uid);
+    const opponentUid = match.playerIds.find((id) => id !== uid);
+    if (pending) {
+      clearTimeout(pending.handle);
+      disconnectTimers.delete(uid);
+      matches.resumeMatch(matchId);
+      send(matchSockets.get(matchId)?.get(opponentUid), "opponentReconnected", { matchId });
+    }
+    const opponentRow = playerRow(opponentUid);
+    send(ws, "matchResumed", {
+      matchId,
+      you: match.sideOf.get(uid),
+      opponent: { id: opponentRow.id, name: opponentRow.name, avatar: readAvatar(opponentRow.avatar) },
+      state: match.state,
+    });
   }
 
   function handleMessage(ws, uid, msg) {
@@ -223,6 +283,11 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
     ws.uid = uid;
     if (!socketsByPlayer.has(uid)) socketsByPlayer.set(uid, new Set());
     socketsByPlayer.get(uid).add(ws);
+    try {
+      tryResumeMatch(uid, ws);
+    } catch (e) {
+      console.warn(JSON.stringify({ event: "arena_resume_failed", uid, error: e?.message }));
+    }
 
     ws.on("message", (raw) => {
       let msg;
@@ -240,7 +305,19 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
 
     ws.on("close", () => {
       socketsByPlayer.get(uid)?.delete(ws);
-      if (socketsByPlayer.get(uid)?.size === 0) socketsByPlayer.delete(uid);
+      const remaining = socketsByPlayer.get(uid);
+      if (remaining?.size === 0) socketsByPlayer.delete(uid);
+
+      // Essa era a conexão "oficial" da partida (quem recebe os broadcasts
+      // de "state"/"challenge"), mas ainda sobra outra aba dessa mesma
+      // conta — repassa a referência pra ela, senão a partida ficaria muda
+      // pra esse jogador mesmo sem ele ter caído de verdade.
+      const matchId = activeMatchOf.get(uid);
+      if (matchId && remaining?.size) {
+        const sockets = matchSockets.get(matchId);
+        if (sockets?.get(uid) === ws) sockets.set(uid, [...remaining][0]);
+      }
+
       queue.leave(uid);
       try {
         handleDisconnect(uid);
@@ -299,6 +376,8 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
     server.removeListener("upgrade", onUpgrade);
     for (const sockets of socketsByPlayer.values())
       for (const ws of sockets) ws.terminate();
+    for (const { handle } of disconnectTimers.values()) clearTimeout(handle);
+    disconnectTimers.clear();
     matches.stop();
     challenges.stop();
     wss.close();
