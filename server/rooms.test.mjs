@@ -274,6 +274,106 @@ test("salas: descoberta, sorteio por nível, grupo, largada, placar, replay e sa
     app.db.close();
   }
 });
+// Mesmo valor de STALE_MEMBER_GRACE_MS em server/rooms.mjs — não exportado
+// (detalhe interno do sweep), então duplicado aqui só pro teste.
+const STALE_MEMBER_GRACE_MS_FOR_TEST = 45000;
+test("salas: auto-desistência por inatividade destrava a sala sem esperar o cronômetro (casuais e ranqueadas)", async () => {
+  let now = Date.now();
+  const app = createApp(":memory:", () => now);
+  await new Promise((r) => app.server.listen(0, "127.0.0.1", r));
+  const base = "http://127.0.0.1:" + app.server.address().port;
+  const call = async (path, token, body, method) => {
+    const r = await fetch(base + path, {
+      method: method || (body ? "POST" : "GET"),
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: "Bearer " + token } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    return { status: r.status, data: await r.json() };
+  };
+  try {
+    // --- Sala casual: 'sumida' nunca mais dá sinal de vida depois de largar. ---
+    const ativa = (await call("/v1/guests", null, { name: "Ativa" })).data;
+    const sumida = (await call("/v1/guests", null, { name: "Sumida" })).data;
+    const room = (
+      await call("/v1/rooms", ativa.token, { mode: "math", capacity: 2, public: false })
+    ).data;
+    await call("/v1/rooms/" + room.code + "/join", sumida.token, {});
+    await call("/v1/rooms/" + room.code + "/start", ativa.token, {});
+    now += 6000; // passa o countdown — sala "playing" (nível 1: 75s de prova)
+
+    // Bem antes do limiar (45s): heartbeat normal de 'ativa' não deveria
+    // forfeitar ninguém, nem a própria 'ativa' nem 'sumida' ainda dentro do prazo.
+    now += 20000;
+    await call("/v1/rooms/" + room.code + "/heartbeat", ativa.token, {});
+    let mid = (await call("/v1/rooms/" + room.code, ativa.token)).data;
+    assert.equal(
+      mid.members.find((m) => m.id === sumida.profile.id).forfeited,
+      false,
+      "fronteira antes do limiar não deveria disparar",
+    );
+    assert.equal(mid.state, "playing", "sala não deveria terminar sozinha ainda (nem pelo cronômetro nem por forfeit)");
+
+    // Passa dos 45s desde o último sinal de 'sumida' (que nunca deu heartbeat
+    // — seu 'seen' ficou parado no instante em que entrou). 'ativa' continua
+    // mandando heartbeat normalmente.
+    now += 26000; // ~46s desde o join de 'sumida', bem antes dos 75s+10s da prova
+    await call("/v1/rooms/" + room.code + "/heartbeat", ativa.token, {});
+    const after = (await call("/v1/rooms/" + room.code, ativa.token)).data;
+    assert.equal(
+      after.members.find((m) => m.id === sumida.profile.id).forfeited,
+      true,
+      "forfeit automático depois do limiar",
+    );
+    assert.equal(
+      after.members.find((m) => m.id === ativa.profile.id).forfeited,
+      false,
+      "quem dá heartbeat normal nunca é desistido",
+    );
+    assert.equal(after.state, "playing", "'ativa' ainda pode terminar a prova normalmente");
+    // 'ativa' termina de verdade — com 'sumida' já contabilizada (score 0),
+    // a sala fecha sem esperar o cronômetro dos 75s+10s da prova inteira.
+    const config = JSON.parse(
+      app.db.prepare("SELECT config FROM rooms WHERE code=?").get(room.code).config,
+    );
+    const finished = (
+      await call("/v1/rooms/" + room.code + "/finish", ativa.token, {
+        answers: config.rounds.map((x) => x.answer),
+      })
+    ).data;
+    assert.equal(finished.state, "finished");
+    assert.equal(finished.members.find((m) => m.id === ativa.profile.id).score, 1000);
+    assert.equal(finished.members.find((m) => m.id === sumida.profile.id).score, 0);
+
+    // --- Sala ranqueada: FORA do escopo deste sweep, de propósito. ---
+    // Desvio do plano original: ranqueada já tem o próprio mecanismo de
+    // "configuração expirada preserva respostas confirmadas"
+    // (server/competitive.mjs) — um teste real desse arquivo mostrou que
+    // este sweep genérico zerava a pontuação antes desse crédito parcial
+    // mais fino entrar em ação. Como não devo mexer em lógica de pontuação/
+    // rating, ranqueada fica só com o que já existe (ver comentário de
+    // autoForfeitStale em rooms.mjs).
+    const rankedA = (await call("/v1/guests", null, { name: "RankedAtiva" })).data;
+    const rankedB = (await call("/v1/guests", null, { name: "RankedSumida" })).data;
+    const ranked = (await call("/v1/rooms/competitive", rankedA.token, {})).data;
+    await call("/v1/rooms/competitive", rankedB.token, {});
+    now += 6000; // passa o countdown de 5s do pareamento ranqueado
+
+    now += STALE_MEMBER_GRACE_MS_FOR_TEST + 1000;
+    await call("/v1/rooms/" + ranked.code + "/heartbeat", rankedA.token, {});
+    const rankedAfter = (await call("/v1/rooms/" + ranked.code, rankedA.token)).data;
+    assert.equal(
+      rankedAfter.members.find((m) => m.id === rankedB.profile.id).forfeited,
+      false,
+      "ranqueada não é tocada por este sweep — fica com o mecanismo próprio dela",
+    );
+  } finally {
+    await new Promise((r) => app.server.close(r));
+    app.db.close();
+  }
+});
 test("níveis: só passa de fase acima da nota mínima, e pareamento usa tolerância", async () => {
   let now = Date.now();
   const app = createApp(":memory:", () => now);

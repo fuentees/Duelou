@@ -17,6 +17,11 @@ import {
 // Pareia com salas cujo nível esteja a até essa distância do nível do jogador —
 // nível numerado (1..20+) não pode exigir combinação exata ou o pareamento trava.
 const LEVEL_TOLERANCE = 3;
+// Bem acima dos 16s já usados pra exibir "online" (view() abaixo) — dá margem
+// pra uma queda de rede breve sem forfeit automático, mas sem deixar o resto
+// da sala (turma inteira, numa aula) esperando por sempre alguém que já foi
+// embora de verdade. Mesma escala de RECONNECT_GRACE_MS da Arena Rush.
+const STALE_MEMBER_GRACE_MS = 45000;
 
 export function roomRoutes(db, clock) {
   db.exec(`CREATE TABLE IF NOT EXISTS rooms (code TEXT PRIMARY KEY, host TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE, mode TEXT NOT NULL, public INTEGER NOT NULL, capacity INTEGER NOT NULL, created INTEGER NOT NULL, starts INTEGER, config TEXT NOT NULL, counted INTEGER NOT NULL DEFAULT 0);
@@ -231,6 +236,39 @@ export function roomRoutes(db, clock) {
     room.game_index = room.game_index + 1;
     room.history = JSON.stringify(history);
   };
+  /**
+   * Desiste automaticamente por quem sumiu de verdade (sem heartbeat há
+   * STALE_MEMBER_GRACE_MS) numa sala já em andamento — sem isso, uma turma
+   * inteira ficaria com o resultado da prova preso ao relógio dela mesma
+   * mesmo com todo mundo, menos um aluno que já fechou o app, pronto. Usa a
+   * MESMA atualização que a saída explícita de sala ranqueada já usa hoje
+   * (linha ~731) — mesmo tratamento de rating pra quem depende disso,
+   * nenhuma regra nova.
+   *
+   * Desvio do plano original ("vale pra casuais e ranqueadas"): só roda em
+   * salas casuais. Ranqueada já tem o próprio mecanismo de "configuração
+   * expirada preserva respostas confirmadas" (server/competitive.mjs), que
+   * dá crédito parcial por perguntas já respondidas mesmo sem heartbeat
+   * entre uma rodada rápida e outra — um teste real (server/competitive.
+   * test.mjs) mostrou que esse sweep genérico de 45s zerava a pontuação
+   * ANTES desse mecanismo mais fino entrar em ação, sobrescrevendo crédito
+   * parcial legítimo. Como não devo mexer na lógica de pontuação/rating,
+   * deixo ranqueada inteiramente com o que já existe.
+   */
+  const autoForfeitStale = (room) => {
+    if (room.counted || !room.starts || room.ranked) return;
+    for (const m of all(
+      "SELECT player FROM room_members WHERE room=? AND forfeited=0 AND score IS NULL AND seen<?",
+      room.code,
+      clock() - STALE_MEMBER_GRACE_MS,
+    ))
+      run(
+        "UPDATE room_members SET score=0,answers='[]',finished=?,seen=0,forfeited=1 WHERE room=? AND player=?",
+        clock(),
+        room.code,
+        m.player,
+      );
+  };
   const view = (room, uid) => {
     finalize(room);
     const config = configOf(room);
@@ -433,9 +471,13 @@ export function roomRoutes(db, clock) {
     db.exec("SAVEPOINT room_request");
     try {
       all(
-        "SELECT * FROM rooms WHERE starts IS NOT NULL AND counted=0 AND (starts + COALESCE(json_extract(config,'$.seconds'),60) * 1000 + 10000 < ? OR NOT EXISTS(SELECT 1 FROM room_members WHERE room=rooms.code AND score IS NULL))",
+        "SELECT * FROM rooms WHERE starts IS NOT NULL AND counted=0 AND (starts + COALESCE(json_extract(config,'$.seconds'),60) * 1000 + 10000 < ? OR NOT EXISTS(SELECT 1 FROM room_members WHERE room=rooms.code AND score IS NULL) OR EXISTS(SELECT 1 FROM room_members WHERE room=rooms.code AND forfeited=0 AND score IS NULL AND seen<?))",
         clock(),
-      ).forEach(finalize);
+        clock() - STALE_MEMBER_GRACE_MS,
+      ).forEach((room) => {
+        autoForfeitStale(room);
+        finalize(room);
+      });
       run("DELETE FROM rooms WHERE created<?", clock() - 86400000);
       if (route === "/v1/rooms/active" && method === "GET") {
         const active = one(
@@ -573,6 +615,12 @@ export function roomRoutes(db, clock) {
       if (action === "join" && method === "POST")
         return { status: 200, data: join(load(code), uid) };
       const room = load(code, uid);
+      // Qualquer ação de verdade do próprio jogador na sala prova presença,
+      // não só heartbeat — sem isso, uma série de rodadas via "round"/
+      // "finish" (sem heartbeat entre uma e outra) podia passar mais de
+      // STALE_MEMBER_GRACE_MS sem tocar `seen` e ser desistida por engano
+      // pelo sweep (autoForfeitStale), mesmo jogando ativamente.
+      run("UPDATE room_members SET seen=? WHERE room=? AND player=?", clock(), code, uid);
       if (!action && method === "GET")
         return { status: 200, data: view(room, uid) };
       if(action === "ready" && method === "POST"){
