@@ -29,6 +29,7 @@ import {
 } from "../../shared/progression.mjs";
 import {
   readCampaign,
+  readAllCampaigns,
   saveCampaign,
   campaignSyncEnabled,
   setCampaignSync,
@@ -131,6 +132,10 @@ export default function ArcadeScreen({
   );
   const syncIdentity = useRef("");
   const [campaignReady, setCampaignReady] = useState(false);
+  // Progresso de todos os jogos, só pra lista: cada capa mostra em que fase
+  // está e quantas estrelas rendeu. Recarrega sempre que a campanha do jogo
+  // aberto muda (terminou uma fase) e ao voltar pra lista.
+  const [allCampaigns, setAllCampaigns] = useState<Record<string, CampaignProgress>>({});
   const [soloKind, setSoloKind] = useState<"campaign" | "training" | "daily">(
     "campaign",
   );
@@ -170,6 +175,19 @@ export default function ArcadeScreen({
     epoch = useRef(0),
     consecutiveFailures = useRef(0);
   syncIdentity.current = (player?.id || "guest") + ":" + mode;
+  useEffect(() => {
+    let active = true;
+    readAllCampaigns(player?.id)
+      .then((all) => {
+        if (active) setAllCampaigns(all);
+      })
+      .catch(() => {
+        // Sem progresso local, a lista aparece sem os selos — não é erro.
+      });
+    return () => {
+      active = false;
+    };
+  }, [player?.id, campaign, screen]);
   useEffect(() => {
     const request = captureSession();
     let active = true;
@@ -785,6 +803,7 @@ export default function ArcadeScreen({
             onToggleSync={toggleCampaignSync}
             onRetrySync={retryCampaignSync}
             campaignReady={campaignReady}
+            allCampaigns={allCampaigns}
             soloKind={soloKind}
             setSoloKind={setSoloKind}
             onCompetitive={competitive}

@@ -37,6 +37,9 @@ type Leader = Stats & { id: string; name: string };
 type PlayTab = "online" | "friends" | "offline";
 type Props = {
   campaign: CampaignProgress;
+  // Progresso de todos os jogos, pra lista mostrar fase e estrelas em cada
+  // capa (ver src/arcade/campaign.ts, readAllCampaigns).
+  allCampaigns: Record<string, CampaignProgress>;
   campaignReady: boolean;
   syncEnabled: boolean;
   syncBusy: boolean;
@@ -129,21 +132,52 @@ export default function BrowseView(p: Props) {
           <Text style={v.description}>
             Aprenda sozinho. Desafie a turma. Conquiste sua patente.
           </Text>
-          <Button disabled={p.busy} onPress={p.onCompetitive}>
-            Jogar competitivo
-          </Button>
-          <Text style={v.description}>
-            Fila única 1 × 1 · melhor de 3 · jogo em rotação · classificação por
-            habilidade. Cinco séries iniciais de colocação. Até cinco séries por
-            rival por dia alteram sua classificação.
-          </Text>
-          <Button secondary onPress={p.onDaily}>
-            Desafio do dia
-          </Button>
+          {/* Mesmo formato da tela de cada jogo: o que é, em uma linha, e o
+              que o toque faz. O parágrafo de regras da fila competitiva vinha
+              depois do botão, quando já não servia pra decidir nada. */}
+          <View style={v.choice}>
+            <Text style={v.choiceTitle}>Fila competitiva</Text>
+            <Text style={v.description}>
+              1 × 1, melhor de 3, jogo em rotação e classificação por
+              habilidade. As cinco primeiras séries são de colocação; até cinco
+              séries por rival por dia mexem na sua patente.
+            </Text>
+            <Button disabled={p.busy} onPress={p.onCompetitive}>
+              Jogar competitivo
+            </Button>
+          </View>
+          <View style={v.choice}>
+            <Text style={v.choiceTitle}>Desafio do dia</Text>
+            <Text style={v.description}>
+              Uma prova por dia, igual para todo mundo, com recorde próprio.
+              Não altera patente.
+            </Text>
+            <Button secondary onPress={p.onDaily}>
+              Jogar o desafio de hoje
+            </Button>
+          </View>
           <Text style={v.heading}>
             Campanha, treino e amigos · {games.length} jogos
           </Text>
-          <GameGrid games={games} onChoose={choose} />
+          <GameGrid
+            games={games}
+            onChoose={choose}
+            progress={Object.fromEntries(
+              modes.map((m) => {
+                const done = p.allCampaigns?.[m.id];
+                return [
+                  m.id,
+                  {
+                    level: done?.unlocked ?? 1,
+                    stars: Object.entries(done?.best ?? {}).reduce(
+                      (sum, [level, score]) => sum + starsFor(score, m.id, Number(level)),
+                      0,
+                    ),
+                  },
+                ];
+              }),
+            )}
+          />
         </>
       ) : (
         <>

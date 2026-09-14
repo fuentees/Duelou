@@ -18,19 +18,27 @@ export const gameArt: Record<string, any> = {
 export default function GameGrid({
   games,
   onChoose,
+  progress,
 }: {
   games: { id: string; name: string; desc: string; symbol?: string }[];
   onChoose: (id: string) => void;
+  // Fase atual e estrelas de cada jogo. A lista mostrava nove capas iguais,
+  // sem dizer em qual deles a pessoa já estava indo bem ou nem tinha começado.
+  progress?: Record<string, { level: number; stars: number }>;
 }) {
   return (
     <View style={s.grid}>
       {games.map((g) => {
         const art = gameArt[g.id];
         const accent = gameColors[g.id]?.[0] || palette.violet;
+        const done = progress?.[g.id];
+        const started = !!done && (done.level > 1 || done.stars > 0);
         return (
           <Pressy
             key={g.id}
-            accessibilityLabel={g.name}
+            accessibilityLabel={
+              started ? `${g.name}. Fase ${done!.level}, ${done!.stars} estrelas.` : g.name
+            }
             onPress={() => onChoose(g.id)}
             outerStyle={s.item}
             style={s.card}
@@ -40,6 +48,14 @@ export default function GameGrid({
             ) : (
               <View style={[s.image, s.fallback, { backgroundColor: accent }]}>
                 <Text style={s.fallbackSymbol}>{g.symbol || "?"}</Text>
+              </View>
+            )}
+            {started && (
+              <View style={[s.badge, { backgroundColor: accent }]}>
+                <Text style={s.badgeText}>
+                  fase {done!.level}
+                  {done!.stars > 0 ? ` · ★ ${done!.stars}` : ""}
+                </Text>
               </View>
             )}
             <View style={s.caption}>
@@ -63,6 +79,15 @@ const s = StyleSheet.create({
     borderColor: palette.border,
   },
   image: { width: "100%", height: 96 },
+  badge: {
+    position: "absolute",
+    top: 8,
+    left: 8,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  badgeText: { fontSize: 11, fontWeight: "900", color: "#FFFFFF" },
   fallback: { alignItems: "center", justifyContent: "center" },
   fallbackSymbol: { fontSize: 40, fontWeight: "800", color: "#FFFFFF" },
   caption: {

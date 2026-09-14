@@ -90,3 +90,18 @@ export async function importAndSyncCampaigns(
     await syncCampaign(mode.id, uid, request);
   }
 }
+
+/**
+ * Progresso de todos os jogos de uma vez — usado pela lista de jogos pra
+ * mostrar em que fase cada um está e quantas estrelas já rendeu. São nove
+ * leituras locais (localStorage no navegador, SecureStore no aparelho), sem
+ * nenhuma chamada de rede.
+ */
+export async function readAllCampaigns(
+  uid?: string,
+): Promise<Record<string, CampaignProgress>> {
+  const entries = await Promise.all(
+    modes.map(async (mode) => [mode.id, await readCampaign(mode.id, uid)] as const),
+  );
+  return Object.fromEntries(entries);
+}
