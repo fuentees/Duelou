@@ -9,6 +9,11 @@ const browser = await chromium.launch({ channel: "msedge", headless: true });
 const errors = [];
 const resilience = process.argv.includes("--resilience");
 mkdirSync("work", { recursive: true });
+// Controla quantas respostas de heartbeat seguidas (poll de ArcadeScreen.tsx,
+// Ticket 44) devem ser derrubadas a partir de agora — ligado/desligado pelo
+// próprio corpo do teste (Ticket 46), não fixo como o "dropped" de /round
+// abaixo, porque preciso escolher o momento exato de começar a queda.
+const heartbeatDrops = { remaining: 0 };
 async function pageFor(user) {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
   page.setDefaultTimeout(20000);
@@ -24,6 +29,16 @@ async function pageFor(user) {
     );
   await page.route("**:3001/**", async (route) => {
     const u = new URL(route.request().url());
+    if (
+      resilience &&
+      u.pathname.endsWith("/heartbeat") &&
+      user?.profile.name === "Competidor0" &&
+      heartbeatDrops.remaining > 0
+    ) {
+      heartbeatDrops.remaining--;
+      await route.abort("failed");
+      return;
+    }
     const response = await route.fetch({ url: base + u.pathname + u.search });
     if (resilience && u.pathname.endsWith("/round")) {
       await new Promise((resolve) => setTimeout(resolve, 150));
@@ -133,6 +148,23 @@ try {
   }
   for (let gameIndex = 0; gameIndex < 2; gameIndex++) {
     await users[0].page.getByText("Rodada 1 / 18", { exact: true }).waitFor();
+    if (resilience && gameIndex === 0) {
+      // O poll de ArcadeScreen.tsx (Ticket 44) já está rodando desde que a
+      // sala foi aberta — o heartbeat só é bloqueado a partir de agora, pra
+      // escolher o momento exato e não interferir com a resposta da rodada.
+      await users[0].page.getByText(/Ao vivo/).waitFor({ timeout: 8000 });
+      heartbeatDrops.remaining = 4;
+      await users[0].page.getByText(/Reconectando/).waitFor({ timeout: 8000 });
+      // A 4ª falha seguida vira "lost" (CONNECTION_LOST_AFTER_FAILURES).
+      await users[0].page.getByText(/Conexão perdida/).waitFor({ timeout: 15000 });
+      heartbeatDrops.remaining = 0;
+      // Sem mais quedas, o próximo poll (backoff já no teto de 8s) recupera
+      // sozinho, sem precisar de nenhuma ação do jogador.
+      await users[0].page.getByText(/Ao vivo/).waitFor({ timeout: 15000 });
+      console.log(
+        'PASS: 4 heartbeats seguidos perdidos levam o status de "Ao vivo" a "Reconectando…" e "Conexão perdida"; parar de perder recupera "Ao vivo" sozinho.',
+      );
+    }
     const row = app.db.prepare("SELECT * FROM rooms WHERE ranked=1").get(),
       config = JSON.parse(row.config);
     assert.equal(row.game_index, gameIndex);
