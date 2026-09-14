@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from "react";
 import { Animated, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Button from "../components/Button";
+import LiveStatus from "../components/LiveStatus";
 import useReducedMotion from "../useReducedMotion";
 import { palette } from "../theme";
 
@@ -9,16 +10,19 @@ export default function MatchmakingScreen({
   status,
   errorMessage,
   onCancel,
+  onRetry,
 }: {
-  status: "connecting" | "queued" | "error";
+  status: "connecting" | "queued" | "reconnecting" | "error";
   errorMessage?: string;
   onCancel: () => void;
+  onRetry?: () => void;
 }) {
   const reducedMotion = useReducedMotion();
   const pulse = useRef(new Animated.Value(0.4)).current;
+  const stalled = status === "error" || status === "reconnecting";
 
   useEffect(() => {
-    if (reducedMotion || status === "error") return;
+    if (reducedMotion || stalled) return;
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(pulse, { toValue: 1, duration: 700, useNativeDriver: true }),
@@ -33,13 +37,17 @@ export default function MatchmakingScreen({
   return (
     <SafeAreaView style={s.screen}>
       <View style={s.center}>
-        {status === "error" ? (
-          <>
-            <Text style={s.title}>Não deu pra conectar</Text>
-            <Text style={s.body}>
-              {errorMessage || "Verifique sua internet e tente de novo."}
-            </Text>
-          </>
+        {stalled ? (
+          <LiveStatus
+            mode="screen"
+            state={status === "error" ? "lost" : "reconnecting"}
+            message={
+              status === "error"
+                ? errorMessage || "Verifique sua internet e tente de novo."
+                : "Tentando te trazer de volta pra partida…"
+            }
+            onRetry={status === "error" ? onRetry : undefined}
+          />
         ) : (
           <>
             <Animated.Text

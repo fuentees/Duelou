@@ -14,6 +14,7 @@ import { playFail } from "../audio/sounds";
 import useReducedMotion from "../useReducedMotion";
 import { palette, radius } from "../theme";
 import Button from "../components/Button";
+import LiveStatus from "../components/LiveStatus";
 
 // Quanto tempo o "poof" fica visível depois de uma tropa sumir (ver o
 // comentário de EDGE_THRESHOLD abaixo sobre como decidimos "morreu" vs
@@ -92,8 +93,29 @@ export default function ArenaOnlineScreen({ onExit }: { onExit?: () => void }) {
   if (socket.phase === "connecting" || socket.phase === "queued")
     return <MatchmakingScreen status={socket.phase} onCancel={handleExit} />;
 
+  // Se já tinha uma partida em andamento (temos "state"), a reconexão fica
+  // dentro da própria tela de batalha (campo congelado + selo sobreposto,
+  // ver abaixo) — só cai na tela cheia de "reconectando" se a queda
+  // aconteceu antes de qualquer estado de batalha chegar (ex.: durante a
+  // revelação do adversário).
+  if (socket.phase === "reconnecting" && !socket.state)
+    return (
+      <MatchmakingScreen
+        status="reconnecting"
+        onCancel={handleExit}
+        onRetry={socket.reconnectNow}
+      />
+    );
+
   if (socket.phase === "error")
-    return <MatchmakingScreen status="error" errorMessage={socket.errorMessage} onCancel={handleExit} />;
+    return (
+      <MatchmakingScreen
+        status="error"
+        errorMessage={socket.errorMessage}
+        onCancel={handleExit}
+        onRetry={socket.reconnectNow}
+      />
+    );
 
   if (socket.phase === "matchFound") {
     const members: BattleMember[] =
@@ -151,6 +173,12 @@ export default function ArenaOnlineScreen({ onExit }: { onExit?: () => void }) {
   return (
     <SafeAreaView style={s.screen}>
       <Animated.View style={[s.match, { transform: [{ translateX: shakeX }] }]}>
+        {socket.phase === "reconnecting" && (
+          <View style={s.reconnectingBanner} accessibilityLiveRegion="polite">
+            <LiveStatus mode="inline" state="reconnecting" />
+            <Text style={s.reconnectingBannerText}>Reconectando você à partida…</Text>
+          </View>
+        )}
         <HealthBar
           label="BASE INIMIGA"
           hp={state.enemyBaseHp}
@@ -192,7 +220,10 @@ export default function ArenaOnlineScreen({ onExit }: { onExit?: () => void }) {
           danger={state.playerBaseHp < DANGER_THRESHOLD}
         />
         <View style={s.row}>
-          <Text style={s.caption}>{socket.opponent?.name || "Adversário"}</Text>
+          <View style={s.opponentNameRow}>
+            <Text style={s.caption}>{socket.opponent?.name || "Adversário"}</Text>
+            {socket.opponentReconnecting && <LiveStatus mode="inline" state="reconnecting" />}
+          </View>
           {state.combo.player >= 2 && (
             <Text style={s.combo} accessibilityLiveRegion="polite">
               🔥 combo x{state.combo.player}
@@ -223,9 +254,17 @@ const s = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 16, padding: 24 },
   match: { flex: 1, padding: 16, gap: 10 },
   row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  opponentNameRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   caption: { fontSize: 12, fontWeight: "700", color: palette.textFaint },
   combo: { fontSize: 13, fontWeight: "900", color: palette.amber },
   opponentLeft: { fontSize: 13, fontWeight: "700", color: palette.textDim, textAlign: "center" },
+  reconnectingBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    alignSelf: "center",
+  },
+  reconnectingBannerText: { fontSize: 12, fontWeight: "700", color: palette.textDim },
   frontLine: {
     position: "absolute",
     left: 0,
