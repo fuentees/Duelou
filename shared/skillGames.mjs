@@ -233,7 +233,7 @@ export function resultDetails(config, answers) {
   if (wrong >= 0) {
     const r = config.rounds[wrong];
     details.push(
-      `Rodada ${wrong + 1}: ${r.prompt} → ${r.options[r.answer]}. ${r.explanation || ""}`,
+      `Rodada ${wrong + 1}: ${r.prompt} → ${r.options[r.answer]}.${r.explanation ? " " + r.explanation : ""}`,
     );
   }
   details.push(
