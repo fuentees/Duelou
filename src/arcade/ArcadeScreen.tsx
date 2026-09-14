@@ -114,12 +114,17 @@ export default function ArcadeScreen({
   onInviteConsumed,
   onNavigate,
   onLogin,
+  initialGame,
+  onInitialGameConsumed,
 }: {
   player: { id: string; name: string } | null;
   inviteCode: string;
   onInviteConsumed: () => void;
   onNavigate: (section: Section) => void;
   onLogin: () => void;
+  // Jogo aberto direto pela tela inicial ("Continuar de onde parou").
+  initialGame?: string | null;
+  onInitialGameConsumed?: () => void;
 }) {
   const [campaign, setCampaign] = useState<CampaignProgress>({
     unlocked: 1,
@@ -804,6 +809,8 @@ export default function ArcadeScreen({
             onRetrySync={retryCampaignSync}
             campaignReady={campaignReady}
             allCampaigns={allCampaigns}
+            initialGame={initialGame}
+            onInitialGameConsumed={onInitialGameConsumed}
             soloKind={soloKind}
             setSoloKind={setSoloKind}
             onCompetitive={competitive}

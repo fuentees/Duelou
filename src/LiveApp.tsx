@@ -69,6 +69,9 @@ export default function LiveApp() {
     return () => sub.remove();
   }, []);
   const [section, setSection] = useState<Section>("home");
+  // Jogo escolhido pelo "Continuar" da tela inicial — a Arena abre direto
+  // nele e limpa isso em seguida, igual ao código de convite.
+  const [startGame, setStartGame] = useState<string | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null),
     [boot, setBoot] = useState(true),
     [busy, setBusy] = useState(false),
@@ -214,7 +217,14 @@ export default function LiveApp() {
       />
     </SafeAreaView>
   ) : section === "home" ? (
-    <HomeScreen player={profile} onNavigate={setSection} />
+    <HomeScreen
+      player={profile}
+      onNavigate={setSection}
+      onContinueGame={(mode) => {
+        setStartGame(mode);
+        setSection("arcade");
+      }}
+    />
   ) : section === "menu" ? (
     <MenuScreen onNavigate={setSection} />
   ) : section === "audio" ? (
@@ -223,6 +233,8 @@ export default function LiveApp() {
     <Arcade
       inviteCode={inviteCode}
       onInviteConsumed={() => setInviteCode("")}
+      initialGame={startGame}
+      onInitialGameConsumed={() => setStartGame(null)}
       player={profile}
       onNavigate={setSection}
       onLogin={() => {

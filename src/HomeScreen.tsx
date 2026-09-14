@@ -2,7 +2,10 @@ import React, { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { api } from "./api";
-import { modes } from "../shared/arcade.mjs";
+import { modes, MAX_LEVEL } from "../shared/arcade.mjs";
+import { starsFor } from "../shared/progression.mjs";
+import { readAllCampaigns } from "./arcade/campaign";
+import { arenaTierFor } from "./theme";
 import { palette } from "./theme";
 import AppHeader from "./components/AppHeader";
 import BottomNav, { Section } from "./components/BottomNav";
@@ -28,12 +31,58 @@ type Summary = { played: number; wins: number; best: number; level: number };
 export default function HomeScreen({
   player,
   onNavigate,
+  onContinueGame,
 }: {
   player: Player | null;
   onNavigate: (section: Section) => void;
+  // Abre a Arena já dentro do jogo escolhido (ver LiveApp.tsx).
+  onContinueGame?: (mode: string) => void;
 }) {
   const [stats, setStats] = useState<Summary | null>(null);
   const [error, setError] = useState("");
+  // De onde a pessoa parou: o jogo em que a campanha está mais adiantada.
+  // Sem isso, a tela inicial só oferecia "escolher um dos nove de novo".
+  const [resume, setResume] = useState<{ mode: string; name: string; level: number; stars: number } | null>(null);
+  const [arena, setArena] = useState<{ rating: number; matches: number; wins: number; streak: number } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    readAllCampaigns(player?.id)
+      .then((all) => {
+        if (!alive) return;
+        const best = modes
+          .map((m) => {
+            const progress = all[m.id];
+            return {
+              mode: m.id,
+              name: m.name,
+              level: progress?.unlocked ?? 1,
+              stars: Object.entries(progress?.best ?? {}).reduce(
+                (sum, [level, score]) => sum + starsFor(score, m.id, Number(level)),
+                0,
+              ),
+            };
+          })
+          .filter((g) => g.level > 1 || g.stars > 0)
+          .sort((a, b) => b.level - a.level || b.stars - a.stars)[0];
+        setResume(best ?? null);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [player?.id]);
+  useEffect(() => {
+    let alive = true;
+    if (!player) return;
+    api("/v1/arena/me")
+      .then((data) => {
+        if (alive) setArena(data);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [player?.id]);
   useEffect(() => {
     let active = true;
     setStats(null);
@@ -71,11 +120,49 @@ export default function HomeScreen({
           </Text>
           <Button onPress={() => onNavigate("arcade")}>Jogar</Button>
         </LinearGradient>
+        {resume && onContinueGame && (
+          <Card>
+            <Text style={s.kicker}>CONTINUAR DE ONDE VOCÊ PAROU</Text>
+            <Text style={s.heading}>
+              {resume.name} · fase {resume.level} de {MAX_LEVEL}
+            </Text>
+            <View style={s.track}>
+              <View
+                style={[
+                  s.fill,
+                  { width: `${Math.round((100 * resume.level) / MAX_LEVEL)}%` as `${number}%` },
+                ]}
+              />
+            </View>
+            <Text style={s.label}>
+              {resume.stars} de 90 estrelas neste jogo
+            </Text>
+            <Button onPress={() => onContinueGame(resume.mode)}>
+              Jogar a fase {resume.level}
+            </Button>
+          </Card>
+        )}
         <Card active>
           <Text style={s.kicker}>ARENA RUSH · 1 × 1</Text>
-          <Text style={s.heading}>Seu raciocínio vira um exército.</Text>
-          <Text style={s.body}>Invocações, combos e uma base para defender. Conheça as regras e encontre seu rival.</Text>
-          <Button onPress={() => onNavigate("arenaRush")}>Conhecer Arena Rush</Button>
+          {arena && arena.matches > 0 ? (
+            <>
+              <Text style={s.heading}>
+                {arenaTierFor(arena.rating).icon} {arenaTierFor(arena.rating).name} · {arena.rating} pontos
+              </Text>
+              <Text style={s.body}>
+                {arena.wins} {arena.wins === 1 ? "vitória" : "vitórias"} em {arena.matches}{" "}
+                {arena.matches === 1 ? "duelo" : "duelos"}
+                {arena.streak > 1 ? ` · ${arena.streak} seguidas` : ""}.
+              </Text>
+              <Button onPress={() => onNavigate("arenaRush")}>Duelar agora</Button>
+            </>
+          ) : (
+            <>
+              <Text style={s.heading}>Seu raciocínio vira um exército.</Text>
+              <Text style={s.body}>Invocações, combos e uma base para defender. Conheça as regras e encontre seu rival.</Text>
+              <Button onPress={() => onNavigate("arenaRush")}>Conhecer Arena Rush</Button>
+            </>
+          )}
         </Card>
         <Text style={s.heading}>Seu resumo</Text>
         <View style={s.stats}>

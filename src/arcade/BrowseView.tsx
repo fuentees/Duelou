@@ -40,6 +40,10 @@ type Props = {
   // Progresso de todos os jogos, pra lista mostrar fase e estrelas em cada
   // capa (ver src/arcade/campaign.ts, readAllCampaigns).
   allCampaigns: Record<string, CampaignProgress>;
+  // Jogo aberto direto (vindo do "Continuar" da tela inicial), consumido uma
+  // única vez pra não prender a navegação nele.
+  initialGame?: string | null;
+  onInitialGameConsumed?: () => void;
   campaignReady: boolean;
   syncEnabled: boolean;
   syncBusy: boolean;
@@ -78,6 +82,14 @@ type Props = {
 
 export default function BrowseView(p: Props) {
   const [step, setStep] = useState("home");
+  useEffect(() => {
+    if (!p.initialGame || !modes.some((m) => m.id === p.initialGame)) return;
+    p.setMode(p.initialGame as ArcadeMode);
+    p.setDifficulty(1);
+    setStep("mode");
+    p.onInitialGameConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p.initialGame]);
   const games = modes.map((g) => ({
     id: g.id,
     name: g.name,
