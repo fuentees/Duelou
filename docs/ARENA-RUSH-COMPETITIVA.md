@@ -66,6 +66,35 @@ API: `GET /v1/arena/me`, `GET /v1/arena/leaderboard`, `GET /v1/arena/history`.
 Na tela: nota e variação no resultado, ficha com cartel e últimas partidas no
 lobby, e a aba Ranking com "Arena Rush" ao lado de "Competitivo".
 
+## Social
+
+**Revanche.** Nos 20 segundos seguintes ao fim da partida, os dois podem se
+reencontrar direto: quem chama fica esperando, o outro recebe o convite na tela
+de resultado e, quando os dois topam, a partida nova começa sem passar pela
+fila. Se o adversário sair ou o prazo acabar, quem aceitou é avisado.
+
+**Convite direto.** `createInvite` devolve um código de seis caracteres que
+vale cinco minutos; quem recebe entra com ele e a partida começa na hora.
+Partida por convite é **amistosa**: entra no histórico marcada como tal, mas
+não mexe na nota de ninguém — senão combinar vitórias com um amigo seria a
+forma mais rápida de subir na classificação.
+
+## Divisões
+
+A nota também vira divisão (Bronze a Lendário, `arenaTierFor` em
+`src/theme.ts`), com as mesmas cores e ícones que o app já usa. É "divisão", não
+"patente": patente continua sendo da fila competitiva. Trocar de divisão é o
+destaque da tela de resultado, acima da variação de pontos.
+
+## Banda
+
+O servidor mandava o estado completo — todas as tropas, com posição e vida —
+para os dois sockets, quinze vezes por segundo. Agora manda só o que mudou
+(`shared/arena/statePatch.ts`), com um retrato completo a cada ~2 segundos que
+conserta mensagem perdida ou arredondamento acumulado. Medido no navegador com
+dois jogadores reais: patch médio de 92 bytes contra 381 do estado completo,
+3,6× menos tráfego no total.
+
 ## Fila
 
 Era FIFO pura — 1400 contra 800 dava na mesma. Agora pareia por proximidade de
@@ -93,7 +122,7 @@ O duelo tem entrada própria na barra de navegação ("Arena" são os jogos,
 - `npm run typecheck`
 - `npm run test:api` (inclui `arena-latency`, `arena-rating` e os demais
   `arena-*`)
-- `node --test shared/arena/*.test.mjs src/arena/*.test.mjs`
+- `npm run test:arena`
 - `npm run build:web` e `npm run check:bundle`
 - Com API e prévia web no ar: `node scripts/check-arena-pvp.mjs` e
   `node scripts/check-rush-polish.mjs` (dois clientes reais; exigem Edge
@@ -101,8 +130,19 @@ O duelo tem entrada própria na barra de navegação ("Arena" são os jogos,
 
 ## O que não foi feito
 
-Convite direto de amigo pro PvP, revanche contra o mesmo adversário (hoje
-"Jogar outra" volta pra fila), temporadas, cosméticos por desempenho e
-transmissão por delta em vez do estado inteiro a 15 Hz. Nenhum teste em
-aparelho físico nem com jogadores reais: os efeitos sobre diversão e retenção
-descritos aqui são hipóteses a validar.
+- **Temporadas** (reset periódico da nota): é decisão de produto, precisa de
+  política de reinício e calendário antes de virar código.
+- **Cosméticos por desempenho**: o editor de personagem existe e poderia
+  premiar divisão ou sequência, mas isso é economia nova, não ajuste.
+- **Tema escuro no app inteiro**: a partida é escura; o resto do app é claro.
+  Trocar isso é refatorar todas as telas (a paleta é constante em tempo de
+  módulo, `StyleSheet.create`), com risco espalhado e pouco a ver com o
+  competitivo.
+- **Fonte de identidade própria**: exige empacotar o arquivo da fonte e pesa no
+  bundle, que tem guarda de tamanho (`npm run check:bundle`).
+
+Nenhum teste em aparelho físico nem com jogadores reais: os efeitos sobre
+diversão, equilíbrio e retenção descritos aqui são hipóteses a validar. Os
+números de equilíbrio (bônus de tipo 2×, combo 4 pra invocar tanque, morte
+súbita em 20s, janelas da fila) estão em constantes nomeadas, feitas pra serem
+calibradas com gente jogando.

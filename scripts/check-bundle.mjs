@@ -17,9 +17,15 @@ const report = {
   totalBytes: sum(files),
 };
 assert.ok(scripts.length > 0, "Build ausente");
+// Orçamento de JavaScript. Não é limite de plataforma: é guarda de
+// regressão, pra ninguém dobrar o bundle sem perceber. Subiu de 900 KB para
+// 920 KB em 14/09/2026, quando a Arena Rush ganhou classificação própria,
+// convite direto, revanche, divisões e envio por delta (~13 KB no total,
+// 1,5% — proporcional ao que entrou). Se for subir de novo, que seja com o
+// mesmo tipo de justificativa, não por inércia.
 assert.ok(
-  report.javascriptBytes <= 900000,
-  "JavaScript acima do orçamento de 900 KB (inclui renderização dos personagens 3D)",
+  report.javascriptBytes <= 920000,
+  "JavaScript acima do orçamento de 920 KB (inclui renderização dos personagens 3D)",
 );
 assert.equal(fonts.length, 1, "Somente a família Ionicons deve ser empacotada");
 assert.ok(fonts[0].includes("Ionicons"));

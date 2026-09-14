@@ -20,10 +20,13 @@
   - Motor: morte súbita nos últimos 20s (dano à base dobrado), desempate por tropa em campo → combo → invocações, vantagem de tipo (batedor>tanque>soldado>batedor, dano dobrado) e `spendCombo` (combo 4 invoca tanque na hora). `applyAnswer` devolve `spawned` — acerto com a pista cheia é avisado, não engolido.
   - `server/arena-rating.mjs` (tabela `arena_ratings`, isolada): nota, cartel, sequência e colocação da Arena, com `GET /v1/arena/me|leaderboard|history`. **Nunca** toca competitive/Elo.
   - Fila pareia por nota com janela que abre no tempo de espera + `sweep()` periódico; sem adversário em 25s, a tela oferece treino contra o robô (`ArenaScreen`, que voltou a ser alcançável só por aí, sem valer nota).
+  - Revanche (janela de 20s depois da partida, sem passar pela fila) e convite direto por código de 6 caracteres (`createInvite`/`joinInvite`, 5 min). Partida por convite é **amistosa**: entra no histórico marcada, não mexe na nota.
+  - Envio por delta (`shared/arena/statePatch.ts`): só o que mudou a cada tique, com retrato completo a cada ~2s. Medido: 3,6× menos tráfego.
+  - Divisões da Arena (`arenaTierFor` em `src/theme.ts`) — "divisão" é da Arena, "patente" continua sendo da fila competitiva.
   - Tema escuro exclusivo da partida (tokens `arena` em `src/theme.ts`), barras de vida com avatar/nome dos dois jogadores, alvos de 56px, e o duelo com entrada própria na barra ("Arena" = jogos, "Duelo" = 1×1 ao vivo).
-- Verificação de regressão: `npm run test:api` (inclui todos os `arena-*.test.mjs` e `rooms.test.mjs`), `node --test shared/arena/*.test.mjs src/arena/*.test.mjs`, `node scripts/check-arena-pvp.mjs` e `node scripts/check-rush-polish.mjs` (manuais, dois clientes reais incluindo cenários de queda/retomada — precisam de `npm run api` + `npm run web:8083` já no ar).
+- Verificação de regressão: `npm run test:api` (inclui todos os `arena-*.test.mjs` e `rooms.test.mjs`), `npm run test:arena`, `node scripts/check-arena-pvp.mjs` e `node scripts/check-rush-polish.mjs` (manuais, dois clientes reais incluindo cenários de queda/retomada — precisam de `npm run api` + `npm run web:8083` já no ar).
 - Cuidado real já encontrado uma vez: qualquer erro não tratado dentro dos listeners de WebSocket (`server/arena-ws.mjs`) derruba o processo Node inteiro, afetando TODOS os jogadores conectados — sempre envolver lógica nova ali (e em `arena-persistence.mjs`) em try/catch, nunca deixar propagar.
-- Próximos passos possíveis (não pedidos ainda): convite de amigo pro PvP, revanche contra o mesmo adversário (hoje "Jogar outra" volta pra fila), progresso/coleção local, temporadas e envio por delta em vez do estado inteiro a 15Hz.
+- Próximos passos possíveis (não pedidos ainda): temporadas com reset de nota, cosméticos por divisão/sequência, tema escuro no app inteiro (hoje só a partida é escura) e fonte de identidade própria.
 
 ## Capacidade de sala, personagem pseudo-3D e reconexão fora da Arena Rush (Tickets 27-46)
 
