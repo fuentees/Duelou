@@ -18,6 +18,8 @@ type Phase =
 // round.x/y/radius vêm do servidor como unidades virtuais 0-100, sem
 // depender do tamanho real da tela (mesma ideia dos outros jogos, em 2D).
 const ARENA = 280;
+// Quanto tempo o bloco certo fica à mostra depois de um erro na memória.
+const MEMORY_REVEAL_MS = 1200;
 export default function SkillRound({
   config,
   seconds,
@@ -33,6 +35,15 @@ export default function SkillRound({
     [active, setActive] = useState(-1),
     [count, setCount] = useState(0),
     [hitTick, setHitTick] = useState(0);
+  // Memória: qual bloco era o certo, quando a pessoa erra. Antes a prova
+  // simplesmente acabava no toque errado, sem dizer onde foi o tropeço — dava
+  // pra repetir o mesmo erro a prova inteira sem nunca saber.
+  const [missed, setMissed] = useState<{ picked: number; correct: number; step: number } | null>(null);
+  // Mira: toques no vazio. Não contam pontos (a pontuação é do servidor), mas
+  // sem isso a pessoa não tinha como saber que estava errando a mira — só que
+  // "o alvo sumiu".
+  const strayTaps = useRef(0);
+  const [strayTick, setStrayTick] = useState(0);
   const phaseRef = useRef<Phase>("ready"),
     answers = useRef<number[]>([]),
     start = useRef(0),
@@ -220,7 +231,19 @@ export default function SkillRound({
               ⏱ {Math.max(0, (aimEndMs - elapsed) / 1000).toFixed(1)}s
             </Text>
           )}
-          <View style={[s.arena, { width: ARENA, height: ARENA }]}>
+          <Pressable
+            accessibilityRole="none"
+            accessible={false}
+            // Toque que não pega alvo nenhum: não tira ponto (a pontuação é
+            // do servidor), mas passa a ser contado e mostrado — dá pra ver
+            // se o problema é mira ou velocidade.
+            onPress={() => {
+              if (phaseRef.current !== "running" || done.current) return;
+              strayTaps.current++;
+              setStrayTick((t) => t + 1);
+            }}
+            style={[s.arena, { width: ARENA, height: ARENA }]}
+          >
             {phase === "running" &&
               config.rounds.map((r, i) => {
                 if (hits.current.has(i)) return null;
@@ -247,7 +270,14 @@ export default function SkillRound({
                   />
                 );
               })}
-          </View>
+          </Pressable>
+          {phase === "running" && (
+            <Text style={s.body}>
+              {[...hits.current.values()].filter((ms) => ms >= 0).length} pegos ·{" "}
+              {[...hits.current.values()].filter((ms) => ms < 0).length} perdidos ·{" "}
+              {strayTaps.current} no vazio
+            </Text>
+          )}
           {phase === "ready" && <Button onPress={begin}>Começar</Button>}
         </>
       ) : config.mode === "reflex" ? (
@@ -323,25 +353,35 @@ export default function SkillRound({
                   s.tile,
                   {
                     backgroundColor: color,
-                    opacity: phase === "show" && active !== n ? 0.35 : 1,
+                    opacity:
+                      (phase === "show" && active !== n) ||
+                      (missed && n !== missed.correct && n !== missed.picked)
+                        ? 0.35
+                        : 1,
                     borderWidth: 4,
                     borderColor:
-                      phase === "show" && active === n
-                        ? palette.text
-                        : "transparent",
+                      (phase === "show" && active === n) ||
+                      (missed && n === missed.correct)
+                        ? palette.green
+                        : missed && n === missed.picked
+                          ? palette.red
+                          : "transparent",
                   },
                 ]}
                 onPress={() => {
-                  if (done.current || phaseRef.current !== "answer") return;
+                  if (done.current || phaseRef.current !== "answer" || missed) return;
                   playTap();
                   const i = answers.current.length;
                   answers.current.push(n);
                   setCount(answers.current.length);
-                  if (
-                    n !== round.sequence![i] ||
-                    answers.current.length === round.sequence!.length
-                  )
-                    finish();
+                  const wrong = n !== round.sequence![i];
+                  if (wrong) {
+                    // Mostra o bloco certo por um instante antes de encerrar.
+                    setMissed({ picked: n, correct: round.sequence![i], step: i + 1 });
+                    setTimeout(finish, MEMORY_REVEAL_MS);
+                    return;
+                  }
+                  if (answers.current.length === round.sequence!.length) finish();
                 }}
               >
                 <Text style={[s.signalText, { color: contrastText(color) }]}>
@@ -350,7 +390,11 @@ export default function SkillRound({
               </Pressable>
             ))}
           </View>
-          {phase === "ready" ? (
+          {missed ? (
+            <Text accessibilityLiveRegion="assertive" style={[s.body, { color: palette.red, fontWeight: "700" }]}>
+              No passo {missed.step}, o certo era o bloco {missed.correct + 1}.
+            </Text>
+          ) : phase === "ready" ? (
             <Button onPress={begin}>Mostrar sequência</Button>
           ) : (
             <Text style={s.body}>
