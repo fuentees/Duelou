@@ -260,6 +260,11 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
       opponent: { id: opponentRow.id, name: opponentRow.name, avatar: readAvatar(opponentRow.avatar) },
       state: match.state,
     });
+    // O desafio que "uid" tinha em mãos antes de cair ficou órfão (a
+    // resposta dele, se algum dia chegar, não tem mais socket vivo pra
+    // devolver o resultado) — sem isso, quem reconecta fica olhando pro
+    // campo de batalha sem nada pra responder até a partida acabar sozinha.
+    issueNextChallenge(matchId, uid);
   }
 
   function handleMessage(ws, uid, msg) {

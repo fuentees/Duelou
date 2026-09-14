@@ -228,6 +228,12 @@ test("reconectar dentro do prazo resume a partida sem passar pela fila de novo",
     // O "queue" reflexo não deveria ter jogado a Alice numa fila/partida nova.
     assert.equal(msgsA2.some((m) => m.type === "matchFound"), false);
 
+    // O desafio que a Alice tinha em mãos antes de cair ficou órfão (o
+    // socket antigo já era) — sem um novo, ela ficaria olhando pro campo de
+    // batalha sem nada pra responder até a partida acabar sozinha.
+    const resumedChallenge = await waitFor(msgsA2, "challenge");
+    assert.equal(resumedChallenge.matchId, foundA.matchId);
+
     await waitFor(msgsB, "opponentReconnected");
 
     // Passa bem da janela de reconexão (300ms) sem ninguém ser desistido —
