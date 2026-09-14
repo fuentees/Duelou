@@ -203,6 +203,7 @@ export default function ArenaOnlineScreen({ onExit }: { onExit?: () => void }) {
           <ResultCard
             state={state}
             showTutorialInfo={isFirstMatch}
+            rating={socket.ratingDelta}
             avatar={socket.me?.avatar}
             playerName={socket.me?.name}
             comeback={state.winner === "player" && wasCriticalRef.current}

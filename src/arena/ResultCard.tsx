@@ -19,6 +19,7 @@ export default function ResultCard({
   rematchLabel = "Revanche",
   avatar,
   playerName,
+  rating,
 }: {
   state: ArenaState;
   // Se a própria base do jogador chegou a ficar crítica em algum momento e
@@ -33,6 +34,9 @@ export default function ResultCard({
   rematchLabel?: string;
   avatar?: unknown;
   playerName?: string;
+  // Nota da Arena depois desta partida. Ausente no modo contra o robô, que
+  // não vale classificação — e a tela diz isso, em vez de ficar ambígua.
+  rating?: { before: number; after: number; delta: number } | null;
 }) {
   // Sempre a perspectiva de quem está vendo a tela — em PvP, o cliente já
   // recebe o estado invertido pra "player" ser sempre "eu" (ver Ticket 21).
@@ -75,6 +79,22 @@ export default function ResultCard({
       <Text style={[s.outcome, won && s.outcomeWon]}>{outcome}</Text>
       <Text style={s.highlight}>{highlight}</Text>
       </LinearGradient>
+      {rating ? (
+        <View style={s.ratingRow}>
+          <Text style={s.ratingLabel}>NOTA DA ARENA</Text>
+          <Text style={s.ratingValue}>
+            {rating.after}{" "}
+            <Text
+              style={{
+                color: rating.delta > 0 ? palette.green : rating.delta < 0 ? palette.red : palette.textDim,
+              }}
+            >
+              {rating.delta > 0 ? "▲ +" : rating.delta < 0 ? "▼ " : "= "}
+              {rating.delta !== 0 ? Math.abs(rating.delta) : ""}
+            </Text>
+          </Text>
+        </View>
+      ) : null}
       <View style={s.scoreRow}>
         <View style={s.scoreBlock}>
           <Text style={[s.scoreValue, { color: PLAYER_COLOR }]}>{Math.round(state.playerBaseHp)}</Text>
@@ -143,6 +163,21 @@ const s = StyleSheet.create({
   outcome: { fontSize: 30, fontWeight: "900", color: palette.text },
   outcomeWon: { color: palette.green },
   highlight: { fontSize: 14, fontWeight: "700", color: palette.textDim, textAlign: "center" },
+  ratingRow: {
+    alignItems: "center",
+    gap: 2,
+    alignSelf: "stretch",
+    paddingVertical: 8,
+    borderRadius: radius.sm,
+    backgroundColor: palette.surfaceAlt,
+  },
+  ratingLabel: { fontSize: 10, fontWeight: "900", letterSpacing: 1, color: palette.textFaint },
+  ratingValue: {
+    fontSize: 24,
+    fontWeight: "900",
+    color: palette.text,
+    fontVariant: ["tabular-nums"],
+  },
   scoreRow: { flexDirection: "row", alignItems: "center", gap: 16 },
   scoreBlock: { alignItems: "center", gap: 2 },
   scoreValue: { fontSize: 34, fontWeight: "900" },

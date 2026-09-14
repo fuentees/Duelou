@@ -16,6 +16,7 @@ import { createArenaChallenges } from "./arena-challenges.mjs";
 import { createArenaMatchEngine } from "./arena-match.mjs";
 import { createArenaPersistence } from "./arena-persistence.mjs";
 import { createArenaQueue } from "./arena-queue.mjs";
+import { createArenaRating } from "./arena-rating.mjs";
 import { createLatencyTracker } from "./arena-latency.mjs";
 import { RECONNECT_GRACE_MS } from "../shared/arena/reconnect.ts";
 import { levelForElapsed } from "../shared/arena/deck.ts";
@@ -44,6 +45,7 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
   const challenges = createArenaChallenges({ now: clock });
   const matches = createArenaMatchEngine({ now: clock, durationSeconds });
   const persistence = createArenaPersistence(db, clock);
+  const rating = createArenaRating(db, clock);
   const queue = createArenaQueue();
   const latency = createLatencyTracker();
 
@@ -116,7 +118,34 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
       finalEnemyHp: state.enemyBaseHp,
       reason,
     });
-    broadcastToMatch(matchId, "matchOver", { matchId, winner, state });
+    // Classificação da Arena (tabela própria — nada de Elo competitivo, ver
+    // server/arena-rating.mjs). Em try/catch como todo o resto daqui: uma
+    // linha que não pôde ser gravada não pode derrubar o processo e, com
+    // ele, a partida de todo mundo que está conectado.
+    let deltas = null;
+    try {
+      deltas = rating.applyResult({
+        playerA: playerAId,
+        playerB: playerBId,
+        winner: winnerUid,
+        combos: {
+          [playerAId]: state.stats.player.maxCombo,
+          [playerBId]: state.stats.enemy.maxCombo,
+        },
+      });
+    } catch (e) {
+      console.warn(
+        JSON.stringify({ event: "arena_rating_failed", matchId, error: e?.message }),
+      );
+    }
+    const sockets = matchSockets.get(matchId);
+    for (const uid of match.playerIds)
+      send(sockets?.get(uid), "matchOver", {
+        matchId,
+        winner,
+        state,
+        rating: deltas?.[uid] ?? null,
+      });
     for (const uid of match.playerIds) activeMatchOf.delete(uid);
     matchSockets.delete(matchId);
     matches.endMatch(matchId);

@@ -15,6 +15,8 @@ export type ArenaSocketPhase =
   | "ended"
   | "error";
 export type AnswerSubmission = { index: number } | { tapped: true };
+// Quanto a nota da Arena mudou nessa partida (server/arena-rating.mjs).
+export type ArenaRatingDelta = { before: number; after: number; delta: number };
 export type ArenaAnswerFeedback = {
   seq: number;
   correct: boolean;
@@ -61,6 +63,7 @@ export default function useArenaSocket() {
   // retorno imediato ("Tanque invocado", "pista cheia"). `seq` existe porque
   // dois acertos seguidos idênticos precisam disparar o aviso duas vezes.
   const [lastAnswer, setLastAnswer] = useState<ArenaAnswerFeedback | null>(null);
+  const [ratingDelta, setRatingDelta] = useState<ArenaRatingDelta | null>(null);
   const answerSeqRef = useRef(0);
 
   // Espelham o estado mais recente pra uso dentro de closures que não são
@@ -209,6 +212,7 @@ export default function useArenaSocket() {
           case "matchOver":
             if (youRef.current) setState(toViewerPerspective(msg.state, youRef.current));
             setWinner(msg.winner);
+            setRatingDelta(msg.rating ?? null);
             // Se o adversário ainda estava com a reconexão pendente quando a
             // partida acabou, foi o timeout dele que decidiu — equivalente
             // ao antigo "opponentLeft" (Ticket 20), só que agora é uma
@@ -299,6 +303,7 @@ export default function useArenaSocket() {
     errorMessage,
     rttMs,
     lastAnswer,
+    ratingDelta,
     submitAnswer,
     forfeit,
     leaveQueue,

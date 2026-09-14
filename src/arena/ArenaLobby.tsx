@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -6,11 +6,55 @@ import Character from "../components/Character";
 import Button from "../components/Button";
 import Card from "../components/Card";
 import ArenaOnlineScreen from "./ArenaOnlineScreen";
+import { api } from "../api";
 import { gradients, palette } from "../theme";
+
+type ArenaStats = {
+  rating: number;
+  matches: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  streak: number;
+  bestStreak: number;
+  bestCombo: number;
+  placement: boolean;
+  placementRemaining: number;
+};
+type ArenaHistoryRow = {
+  id: string;
+  opponent: string;
+  outcome: "win" | "loss" | "draw";
+  myBaseHp: number;
+  theirBaseHp: number;
+};
 
 export default function ArenaLobby({ avatar, onExit }: { avatar?: unknown; onExit: () => void }) {
   const [playing, setPlaying] = useState(false);
+  const [stats, setStats] = useState<ArenaStats | null>(null);
+  const [history, setHistory] = useState<ArenaHistoryRow[]>([]);
+  // Recarrega ao voltar de uma partida (playing volta a false): a nota e o
+  // cartel mudaram agora mesmo, seria estranho a tela mostrar o de antes.
+  useEffect(() => {
+    if (playing) return;
+    let alive = true;
+    Promise.all([api<ArenaStats>("/v1/arena/me"), api<ArenaHistoryRow[]>("/v1/arena/history")])
+      .then(([s, h]) => {
+        if (!alive) return;
+        setStats(s);
+        setHistory(h.slice(0, 5));
+      })
+      .catch(() => {
+        // Ficha é complemento, não pré-requisito pra jogar: sem ela a tela
+        // continua inteira e o botão de buscar adversário segue funcionando.
+      });
+    return () => {
+      alive = false;
+    };
+  }, [playing]);
   if (playing) return <ArenaOnlineScreen onExit={() => setPlaying(false)} />;
+  const outcomeLabel = { win: "Vitória", loss: "Derrota", draw: "Empate" } as const;
+  const outcomeColor = { win: palette.green, loss: palette.red, draw: palette.textDim } as const;
   return <SafeAreaView style={{ flex: 1, backgroundColor: palette.bg }}>
     <ScrollView contentContainerStyle={s.content}>
       <Button secondary onPress={onExit}>Voltar ao menu</Button>
@@ -25,6 +69,61 @@ export default function ArenaLobby({ avatar, onExit }: { avatar?: unknown; onExi
         <Text style={s.lead}>Pense rápido. Invoque suas tropas. Defenda sua base.</Text>
         <Text style={s.tag}>1 × 1 ONLINE · ATÉ 100 SEGUNDOS</Text>
       </LinearGradient>
+      {stats && (
+        <Card>
+          <View style={s.statsHeader}>
+            <View style={{ flex: 1, minWidth: 120 }}>
+              <Text style={s.statsLabel}>SUA NOTA NA ARENA</Text>
+              <Text style={s.rating}>{stats.rating}</Text>
+            </View>
+            {stats.placement ? (
+              <Text style={s.note}>
+                Colocação: faltam {stats.placementRemaining}{" "}
+                {stats.placementRemaining === 1 ? "partida" : "partidas"} pra entrar na tabela.
+              </Text>
+            ) : (
+              <Text style={s.note}>
+                {stats.streak > 1
+                  ? `🔥 ${stats.streak} vitórias seguidas`
+                  : stats.streak < -1
+                    ? `${Math.abs(stats.streak)} derrotas seguidas — hora de virar`
+                    : `Melhor sequência: ${stats.bestStreak}`}
+              </Text>
+            )}
+          </View>
+          <View style={s.record}>
+            {[
+              [`${stats.wins}`, "Vitórias"],
+              [`${stats.losses}`, "Derrotas"],
+              [`${stats.draws}`, "Empates"],
+              [`x${stats.bestCombo}`, "Melhor combo"],
+            ].map(([value, label]) => (
+              <View key={label} style={s.recordItem}>
+                <Text style={s.recordValue}>{value}</Text>
+                <Text style={s.statsLabel}>{label}</Text>
+              </View>
+            ))}
+          </View>
+          {history.length > 0 && (
+            <View style={{ gap: 6 }}>
+              <Text style={s.heading}>Últimas partidas</Text>
+              {history.map((h) => (
+                <View key={h.id} style={s.historyRow}>
+                  <Text style={[s.historyOutcome, { color: outcomeColor[h.outcome] }]}>
+                    {outcomeLabel[h.outcome]}
+                  </Text>
+                  <Text style={[s.note, { flex: 1, minWidth: 80 }]} numberOfLines={1}>
+                    vs {h.opponent}
+                  </Text>
+                  <Text style={s.historyScore}>
+                    {Math.round(h.myBaseHp)} × {Math.round(h.theirBaseHp)}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </Card>
+      )}
       <Button onPress={() => setPlaying(true)}>Buscar adversário</Button>
       <Text style={s.note}>A busca começa ao tocar no botão. Você pode cancelar enquanto espera.</Text>
       <Card>
@@ -55,4 +154,13 @@ const s = StyleSheet.create({
   heading: { color: palette.text, fontWeight: "800", fontSize: 16 },
   rule: { flexDirection: "row", gap: 12, paddingVertical: 6 },
   number: { fontSize: 18, fontWeight: "900", color: palette.violet },
+  statsHeader: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8 },
+  statsLabel: { fontSize: 10, fontWeight: "900", letterSpacing: 1, color: palette.textFaint },
+  rating: { fontSize: 34, fontWeight: "900", color: palette.text, fontVariant: ["tabular-nums"] },
+  record: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
+  recordItem: { flexGrow: 1, minWidth: 64, gap: 2 },
+  recordValue: { fontSize: 20, fontWeight: "900", color: palette.text, fontVariant: ["tabular-nums"] },
+  historyRow: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
+  historyOutcome: { fontSize: 13, fontWeight: "900", minWidth: 68 },
+  historyScore: { fontSize: 13, fontWeight: "800", color: palette.textDim, fontVariant: ["tabular-nums"] },
 });
