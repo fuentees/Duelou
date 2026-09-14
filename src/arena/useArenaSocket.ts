@@ -46,6 +46,10 @@ export default function useArenaSocket() {
   const [opponentReconnecting, setOpponentReconnecting] = useState(false);
   const [opponentLeft, setOpponentLeft] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  // Tempo de ida e volta medido pelo servidor (ping/pong do protocolo). Só
+  // informativo: quem desconta a rede do tempo de resposta é o servidor,
+  // nunca o cliente (ver server/arena-latency.mjs).
+  const [rttMs, setRttMs] = useState<number | null>(null);
 
   // Espelham o estado mais recente pra uso dentro de closures que não são
   // recriadas a cada render (os handlers do socket, montados uma vez por
@@ -193,6 +197,9 @@ export default function useArenaSocket() {
             if (opponentReconnectingRef.current) setOpponentLeft(true);
             setPhaseBoth("ended");
             break;
+          case "latency":
+            if (typeof msg.rttMs === "number") setRttMs(msg.rttMs);
+            break;
           case "error":
             setErrorMessage(typeof msg.message === "string" ? msg.message : "Erro desconhecido.");
             break;
@@ -271,6 +278,7 @@ export default function useArenaSocket() {
     opponentReconnecting,
     opponentLeft,
     errorMessage,
+    rttMs,
     submitAnswer,
     forfeit,
     leaveQueue,

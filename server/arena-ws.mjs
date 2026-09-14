@@ -16,6 +16,7 @@ import { createArenaChallenges } from "./arena-challenges.mjs";
 import { createArenaMatchEngine } from "./arena-match.mjs";
 import { createArenaPersistence } from "./arena-persistence.mjs";
 import { createArenaQueue } from "./arena-queue.mjs";
+import { createLatencyTracker } from "./arena-latency.mjs";
 import { RECONNECT_GRACE_MS } from "../shared/arena/reconnect.ts";
 import { levelForElapsed } from "../shared/arena/deck.ts";
 
@@ -26,6 +27,10 @@ const PATH = "/v1/arena-realtime";
 // rate limiter já existe, isso é sobre quantas conexões ficam abertas ao
 // mesmo tempo).
 const MAX_SOCKETS_PER_PLAYER = 2;
+// De quanto em quanto tempo o servidor mede a rede de cada conexão. Usa o
+// ping/pong do próprio protocolo WebSocket: o navegador (e o React Native)
+// respondem sozinhos, sem nenhuma mensagem nova do lado do cliente.
+const PING_INTERVAL_MS = 4000;
 
 export function attachArenaRealtime(server, db, clock = Date.now, options = {}) {
   const {
@@ -40,6 +45,7 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
   const matches = createArenaMatchEngine({ now: clock, durationSeconds });
   const persistence = createArenaPersistence(db, clock);
   const queue = createArenaQueue();
+  const latency = createLatencyTracker();
 
   const socketsByPlayer = new Map(); // uid -> Set<ws>
   const matchSockets = new Map(); // matchId -> Map(uid -> ws)
@@ -186,7 +192,14 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
     const submission = msg.tapped ? { tapped: true } : { index: msg.index };
     const result = challenges.submit(challengeId, submission);
     if (!result) return send(ws, "error", { message: "Desafio desconhecido ou já respondido." });
-    const applied = matches.applyAnswer(matchId, uid, result);
+    // O relógio de quem mede continua sendo o do servidor (anti-trapaça),
+    // mas descontando a viagem da rede: sem isso, quem joga com 150ms de
+    // latência aparece 150ms mais lento e quase nunca alcança o limiar de
+    // "resposta rápida" (ver server/arena-latency.mjs).
+    const applied = matches.applyAnswer(matchId, uid, {
+      ...result,
+      elapsedMs: latency.compensate(uid, result.elapsedMs),
+    });
     send(ws, "answerResult", {
       matchId,
       challengeId,
@@ -290,10 +303,43 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
     }
   }
 
+  // Um timer só pra todas as conexões — mede a rede de cada uma e devolve o
+  // número pro próprio jogador ver ("seu ping"), como qualquer jogo
+  // competitivo faz.
+  const pingTimer = setInterval(() => {
+    for (const [uid, sockets] of socketsByPlayer) {
+      for (const ws of sockets) {
+        if (ws.readyState !== ws.OPEN) continue;
+        try {
+          ws.ping(String(clock()));
+        } catch (e) {
+          console.warn(JSON.stringify({ event: "arena_ping_failed", uid, error: e?.message }));
+        }
+      }
+    }
+  }, PING_INTERVAL_MS);
+  pingTimer.unref?.();
+
   wss.on("connection", (ws, req, uid) => {
     ws.uid = uid;
     if (!socketsByPlayer.has(uid)) socketsByPlayer.set(uid, new Set());
     socketsByPlayer.get(uid).add(ws);
+    ws.on("pong", (data) => {
+      try {
+        const sentAt = Number(data?.toString());
+        if (!Number.isFinite(sentAt)) return;
+        const rttMs = clock() - sentAt;
+        latency.record(uid, rttMs);
+        send(ws, "latency", { rttMs: Math.round(rttMs) });
+      } catch (e) {
+        // Igual aos outros listeners deste arquivo: um erro solto aqui
+        // derrubaria o processo inteiro e, com ele, a partida de todo mundo.
+        console.warn(JSON.stringify({ event: "arena_pong_failed", uid, error: e?.message }));
+      }
+    });
+    try {
+      ws.ping(String(clock()));
+    } catch {}
     try {
       tryResumeMatch(uid, ws);
     } catch (e) {
@@ -330,6 +376,7 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
       }
 
       queue.leave(uid);
+      if (!remaining?.size) latency.forget(uid);
       try {
         handleDisconnect(uid);
       } catch (e) {
@@ -384,6 +431,8 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
   server.on("upgrade", onUpgrade);
 
   function stop() {
+    clearInterval(pingTimer);
+    latency.stop();
     server.removeListener("upgrade", onUpgrade);
     for (const sockets of socketsByPlayer.values())
       for (const ws of sockets) ws.terminate();

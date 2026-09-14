@@ -178,7 +178,20 @@ export default function ArenaOnlineScreen({ onExit }: { onExit?: () => void }) {
     <SafeAreaView style={s.screen}>
       <Animated.View style={[s.match, { transform: [{ translateX: shakeX }] }]}>
         <View style={s.row}>
-          <Text style={s.caption}>ARENA RUSH · 1 × 1</Text>
+          <View style={s.opponentNameRow}>
+            <Text style={s.caption}>ARENA RUSH · 1 × 1</Text>
+            {socket.rttMs !== null && (
+              <Text
+                style={[
+                  s.ping,
+                  { color: socket.rttMs < 120 ? palette.green : socket.rttMs < 250 ? palette.amber : palette.red },
+                ]}
+                accessibilityLabel={`Sua conexão: ${socket.rttMs} milissegundos de ida e volta`}
+              >
+                {socket.rttMs} ms
+              </Text>
+            )}
+          </View>
           <Text accessibilityLabel={`Tempo restante: ${Math.ceil(state.timeRemaining)} segundos`}
             style={{ fontSize: 20, fontWeight: "900", color: state.timeRemaining <= 15 ? palette.red : palette.text, fontVariant: ["tabular-nums"] }}>
             {Math.floor(Math.max(0, Math.ceil(state.timeRemaining)) / 60)}:{String(Math.max(0, Math.ceil(state.timeRemaining)) % 60).padStart(2, "0")}
@@ -269,6 +282,7 @@ const s = StyleSheet.create({
   opponentNameRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", flex: 1, minWidth: 0, gap: 8 },
   caption: { fontSize: 12, fontWeight: "700", color: palette.textFaint, flexShrink: 1 },
   combo: { fontSize: 13, fontWeight: "900", color: palette.amber },
+  ping: { fontSize: 11, fontWeight: "800", fontVariant: ["tabular-nums"] },
   opponentLeft: { fontSize: 13, fontWeight: "700", color: palette.textDim, textAlign: "center" },
   reconnectingBanner: {
     flexDirection: "row",
