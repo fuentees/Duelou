@@ -32,19 +32,32 @@ export function createArenaPersistence(db, clock = Date.now) {
     finalEnemyHp,
     reason,
   }) {
-    db.prepare(
-      "INSERT OR IGNORE INTO arena_matches VALUES(?,?,?,?,?,?,?,?,?)",
-    ).run(
-      matchId,
-      playerA,
-      playerB,
-      winner ?? null,
-      durationSeconds,
-      finalPlayerHp,
-      finalEnemyHp,
-      reason,
-      clock(),
-    );
+    try {
+      db.prepare(
+        "INSERT OR IGNORE INTO arena_matches VALUES(?,?,?,?,?,?,?,?,?)",
+      ).run(
+        matchId,
+        playerA,
+        playerB,
+        winner ?? null,
+        durationSeconds,
+        finalPlayerHp,
+        finalEnemyHp,
+        reason,
+        clock(),
+      );
+    } catch (e) {
+      // Uma conta pode ser excluída (DELETE /v1/me) enquanto ainda participa
+      // de uma partida ativa — o disconnect que isso causa tenta gravar o
+      // histórico normalmente, mas o id do jogador já não existe mais em
+      // players, e o FOREIGN KEY falha. É uma situação legítima (não um bug
+      // de estado), então só registra e segue: histórico é "nice to have",
+      // não vale derrubar o servidor inteiro — e as partidas de todo mundo
+      // junto — por uma linha que não pôde ser salva.
+      console.warn(
+        JSON.stringify({ event: "arena_match_record_failed", matchId, error: e.message }),
+      );
+    }
   }
 
   function getMatch(matchId) {

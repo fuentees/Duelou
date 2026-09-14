@@ -242,7 +242,14 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
       socketsByPlayer.get(uid)?.delete(ws);
       if (socketsByPlayer.get(uid)?.size === 0) socketsByPlayer.delete(uid);
       queue.leave(uid);
-      handleDisconnect(uid);
+      try {
+        handleDisconnect(uid);
+      } catch (e) {
+        // Nunca deixa um erro aqui derrubar o processo — isso fecharia a
+        // conexão de todo mundo, não só desse jogador (mesmo espírito do
+        // try/catch em "message" acima).
+        console.warn(JSON.stringify({ event: "arena_disconnect_failed", uid, error: e?.message }));
+      }
     });
   });
 

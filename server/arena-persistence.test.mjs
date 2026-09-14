@@ -91,3 +91,22 @@ test("getMatch devolve null pra partida que nunca foi gravada", () => {
   const persistence = createArenaPersistence(db, () => 1);
   assert.equal(persistence.getMatch("nao-existe"), null);
 });
+
+test("recordMatch não derruba o processo se um jogador já foi excluído (FOREIGN KEY) — só não grava a linha", () => {
+  const db = makeDb();
+  const persistence = createArenaPersistence(db, () => 1);
+  db.prepare("DELETE FROM players WHERE id=?").run("bob"); // conta excluída (DELETE /v1/me de verdade)
+  assert.doesNotThrow(() => {
+    persistence.recordMatch({
+      matchId: "m2",
+      playerA: "alice",
+      playerB: "bob", // não existe mais
+      winner: "alice",
+      durationSeconds: 30,
+      finalPlayerHp: 50,
+      finalEnemyHp: 0,
+      reason: "disconnect",
+    });
+  });
+  assert.equal(persistence.getMatch("m2"), null, "sem gravar a linha, mas sem quebrar o servidor");
+});

@@ -253,3 +253,37 @@ test("mensagem 'answer' referenciando desafio de outro jogador é rejeitada", as
     wsB.close();
   });
 });
+
+test("conta excluída (DELETE /v1/me) em partida ativa não derruba o servidor pros outros jogadores", async () => {
+  await withServer(async ({ app, call, wsBase }) => {
+    const a = (await call("/v1/guests", null, { name: "AliceExcluida" })).data;
+    const b = (await call("/v1/guests", null, { name: "BobSobrevive" })).data;
+    const wsA = connect(wsBase, a.token);
+    const wsB = connect(wsBase, b.token);
+    await Promise.all([
+      new Promise((r) => wsA.once("open", r)),
+      new Promise((r) => wsB.once("open", r)),
+    ]);
+    const msgsB = collect(wsB);
+    wsA.send(JSON.stringify({ type: "queue" }));
+    await new Promise((r) => setTimeout(r, 100));
+    wsB.send(JSON.stringify({ type: "queue" }));
+    await waitFor(msgsB, "matchFound");
+
+    // Alice exclui a própria conta (rota real, /v1/me) enquanto ainda está
+    // na partida — cenário que derrubava o servidor inteiro antes da
+    // correção em server/arena-persistence.mjs (FOREIGN KEY não tratado).
+    const deleted = await call("/v1/me", a.token, undefined, "DELETE");
+    assert.equal(deleted.status, 200);
+    wsA.close();
+
+    // Bob deveria ganhar por desistência (Alice "caiu") sem o servidor cair
+    // — se tivesse caído, esta chamada HTTP comum já falharia.
+    await waitFor(msgsB, "opponentLeft");
+    await waitFor(msgsB, "matchOver");
+    const health = await call("/health", null);
+    assert.equal(health.status, 200, "servidor deveria continuar respondendo normalmente");
+
+    wsB.close();
+  });
+});
