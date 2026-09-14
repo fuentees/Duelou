@@ -44,8 +44,15 @@ import RoomView from "./RoomView";
 import BrowseView from "./BrowseView";
 import BottomNav, { Section } from "../components/BottomNav";
 import AppHeader from "../components/AppHeader";
+import type { LiveStatusState } from "../components/LiveStatus";
 import { playFail, playSuccess } from "../audio/sounds";
 import { s } from "./styles";
+
+// A partir de quantas falhas seguidas de heartbeat/poll o status vira "lost"
+// (antes disso, "reconnecting") — e o backoff entre tentativas nesse meio
+// tempo, com teto pra não ficar tentando de segundo em segundo pra sempre.
+const CONNECTION_LOST_AFTER_FAILURES = 4;
+const POLL_RETRY_BACKOFF_MS = [1000, 2000, 4000, 8000];
 
 type ArcadeFormat = "md1" | "md3";
 type Member = {
@@ -143,7 +150,11 @@ export default function ArcadeScreen({
     [room, setRoom] = useState<Room | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
-    [connected, setConnected] = useState(false);
+    // Reconectando por padrão até o primeiro poll confirmar — mesmo estado
+    // inicial que a tag "RECONECTANDO" já mostrava antes desta tela ter
+    // 3 níveis (Ticket 44).
+    [connectionStatus, setConnectionStatus] = useState<LiveStatusState>("reconnecting");
+  const connected = connectionStatus === "live";
   const [stats, setStats] = useState<Stats | null>(null);
   const [leaders, setLeaders] = useState<Leader[]>([]);
   const [localAnswers, setLocalAnswers] = useState<number[]>([]);
@@ -156,7 +167,8 @@ export default function ArcadeScreen({
     [dismissedRematch, setDismissedRematch] = useState<string | null>(null);
   const lock = useRef(false),
     offset = useRef(0),
-    epoch = useRef(0);
+    epoch = useRef(0),
+    consecutiveFailures = useRef(0);
   syncIdentity.current = (player?.id || "guest") + ":" + mode;
   useEffect(() => {
     const request = captureSession();
@@ -304,6 +316,7 @@ export default function ArcadeScreen({
     let stopped = false,
       timer: ReturnType<typeof setTimeout>;
     const generation = ++epoch.current;
+    consecutiveFailures.current = 0;
     const poll = async () => {
       if (AppState.currentState === "background") {
         timer = setTimeout(poll, 3000);
@@ -332,14 +345,30 @@ export default function ArcadeScreen({
             }
           }
         }
-        if (!stopped) setConnected(true);
+        consecutiveFailures.current = 0;
+        if (!stopped) setConnectionStatus("live");
       } catch (e) {
+        consecutiveFailures.current++;
         if (!stopped) {
-          setConnected(false);
+          setConnectionStatus(
+            consecutiveFailures.current >= CONNECTION_LOST_AFTER_FAILURES
+              ? "lost"
+              : "reconnecting",
+          );
           setError(e instanceof Error ? e.message : "Falha de conexão");
         }
       }
-      if (!stopped) timer = setTimeout(poll, room?.ranked ? 2000 : 3000);
+      if (!stopped)
+        timer = setTimeout(
+          poll,
+          consecutiveFailures.current > 0
+            ? POLL_RETRY_BACKOFF_MS[
+                Math.min(consecutiveFailures.current - 1, POLL_RETRY_BACKOFF_MS.length - 1)
+              ]
+            : room?.ranked
+              ? 2000
+              : 3000,
+        );
     };
     poll();
     return () => {
