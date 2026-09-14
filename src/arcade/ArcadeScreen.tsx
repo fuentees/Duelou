@@ -748,6 +748,7 @@ export default function ArcadeScreen({
             player={player}
             game={game}
             connected={connected}
+            connectionStatus={connectionStatus}
             now={now}
             busy={busy}
             pending={pending}

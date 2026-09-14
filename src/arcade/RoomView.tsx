@@ -11,6 +11,8 @@ import {
 } from "../../shared/arcade.mjs";
 import { medal } from "../theme";
 import Button from "../components/Button";
+import LiveStatus from "../components/LiveStatus";
+import type { LiveStatusState } from "../components/LiveStatus";
 import Card from "../components/Card";
 import AnimatedNumber from "../components/AnimatedNumber";
 import CompetitiveRound from "./CompetitiveRound";
@@ -76,6 +78,7 @@ export default function RoomView({
   player,
   game,
   connected,
+  connectionStatus,
   now,
   busy,
   pending,
@@ -96,6 +99,7 @@ export default function RoomView({
   player: { id: string; name: string } | null;
   game: { name: string; description: string };
   connected: boolean;
+  connectionStatus: LiveStatusState;
   now: number;
   busy: boolean;
   pending: number[] | null;
@@ -129,7 +133,7 @@ export default function RoomView({
     <>
       <View style={s.row}>
         <Text style={s.eyebrow}>SALA {room.code}</Text>
-        <Text style={s.tag}>{connected ? "CONECTADO" : "RECONECTANDO"}</Text>
+        <LiveStatus mode="inline" state={connectionStatus} />
       </View>
       <Text style={s.title}>{game.name}</Text>
       <Text style={s.caption}>
