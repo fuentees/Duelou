@@ -126,6 +126,18 @@ export const s = StyleSheet.create({
   },
   heroName: { fontSize: 24, fontWeight: "900", color: palette.text },
   heroCompetitive: { fontSize: 13, fontWeight: "700", color: palette.textDim },
+  // Nível/XP/moedas (Ticket 35) — eram uma única linha de texto corrida.
+  statRow: { flexDirection: "row", gap: 10 },
+  statChip: {
+    flex: 1,
+    alignItems: "center",
+    gap: 2,
+    paddingVertical: 12,
+    borderRadius: radius.md,
+    backgroundColor: palette.surfaceAlt,
+  },
+  statValue: { fontSize: 18, fontWeight: "900", color: palette.text },
+  statLabel: { fontSize: 11, fontWeight: "700", color: palette.textFaint },
   track: {
     height: 6,
     borderRadius: 5,

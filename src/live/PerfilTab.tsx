@@ -119,10 +119,20 @@ export default function PerfilTab({
           contatos. Compartilhar abre o menu do seu aparelho.
         </Text>
       </Card>
-      <Text style={s.muted}>
-        Nível de experiência {profile.level} · {profile.xp} XP · {profile.coins}{" "}
-        moedas
-      </Text>
+      <View style={s.statRow}>
+        <View style={s.statChip}>
+          <Text style={s.statValue}>{profile.level}</Text>
+          <Text style={s.statLabel}>nível</Text>
+        </View>
+        <View style={s.statChip}>
+          <Text style={s.statValue}>{profile.xp}</Text>
+          <Text style={s.statLabel}>XP</Text>
+        </View>
+        <View style={s.statChip}>
+          <Text style={s.statValue}>{profile.coins}</Text>
+          <Text style={s.statLabel}>moedas</Text>
+        </View>
+      </View>
       <Card>
         <Text style={s.heading}>Objetivos da semana</Text>
         <Text style={s.muted}>
