@@ -150,49 +150,86 @@ export default function BrowseView(p: Props) {
           <Text style={v.title}>{selected.name}</Text>
           {step === "mode" ? (
             <>
-              <Text style={v.description}>Como você quer jogar?</Text>
-              <Button
-                disabled={!p.campaignReady}
-                onPress={() => solo("campaign")}
-              >
-                Jogar sozinho
-              </Button>
-              <Text style={v.description}>
-                Campanha · 30 fases · progresso salvo neste aparelho, mesmo sem
-                conta. Fase atual: {p.campaign.unlocked}.
-              </Text>
-              <Text style={v.description}>{p.syncStatus}</Text>
-              <Text style={v.description}>
-                Sincronização opcional: une as melhores fases deste aparelho com
-                sua conta, sem alterar a classificação.
-              </Text>
-              <Button secondary disabled={p.syncBusy} onPress={p.onToggleSync}>
-                {!p.player
-                  ? "Entrar para sincronizar"
-                  : p.syncEnabled
-                    ? "Desativar sincronização"
-                    : "Ativar sincronização"}
-              </Button>
-              {p.syncEnabled && (
-                <Button secondary disabled={p.syncBusy} onPress={p.onRetrySync}>
-                  Sincronizar agora
+              {/* Três formas de jogar, cada uma num cartão que diz o que é,
+                  onde você está e o que o toque faz. Antes eram botões
+                  empilhados com parágrafos no meio: a explicação da campanha
+                  vinha depois do botão dela, e a sincronização (que não é uma
+                  forma de jogar) ficava entre as duas primeiras. */}
+              <Text style={v.heading}>Como você quer jogar?</Text>
+              <View style={v.choice}>
+                <Text style={v.choiceTitle}>Campanha</Text>
+                <Text style={v.description}>
+                  30 fases em seis capítulos, uma destravando a próxima.
+                  Progresso salvo neste aparelho, mesmo sem conta.
+                </Text>
+                <View style={v.progressRow}>
+                  <View style={v.progressTrack}>
+                    <View
+                      style={[
+                        v.progressFill,
+                        { width: `${Math.round((100 * p.campaign.unlocked) / MAX_LEVEL)}%` },
+                      ]}
+                    />
+                  </View>
+                  <Text style={v.count}>
+                    fase {p.campaign.unlocked} de {MAX_LEVEL}
+                  </Text>
+                </View>
+                <Button disabled={!p.campaignReady} onPress={() => solo("campaign")}>
+                  {p.campaign.unlocked > 1
+                    ? `Continuar na fase ${p.campaign.unlocked}`
+                    : "Começar a campanha"}
                 </Button>
-              )}
-              <Button secondary onPress={() => solo("training")}>
-                Treino livre
-              </Button>
-              <Text style={v.description}>
-                Escolha qualquer nível. Pratique sem afetar campanha ou patente.
-              </Text>
-              <Button
-                secondary
-                onPress={() => {
-                  p.setTab("online");
-                  setStep("online");
-                }}
-              >
-                Multijogador
-              </Button>
+              </View>
+
+              <View style={v.choice}>
+                <Text style={v.choiceTitle}>Treino livre</Text>
+                <Text style={v.description}>
+                  Qualquer nível, quantas vezes quiser. Não altera campanha,
+                  patente nem nota.
+                </Text>
+                <Button secondary onPress={() => solo("training")}>
+                  Escolher um nível
+                </Button>
+              </View>
+
+              <View style={v.choice}>
+                <Text style={v.choiceTitle}>Multijogador</Text>
+                <Text style={v.description}>
+                  Salas com a turma ou a fila competitiva 1 × 1.
+                </Text>
+                <Button
+                  secondary
+                  onPress={() => {
+                    p.setTab("online");
+                    setStep("online");
+                  }}
+                >
+                  Ver salas e fila
+                </Button>
+              </View>
+
+              {/* Sincronização não é uma forma de jogar: fica no rodapé, com o
+                  estado atual em vez de um parágrafo solto. */}
+              <View style={v.syncBox}>
+                <Text style={v.syncTitle}>Sincronização da campanha</Text>
+                <Text style={v.description}>
+                  {p.syncStatus} Une as melhores fases deste aparelho com sua
+                  conta, sem alterar a classificação.
+                </Text>
+                <Button secondary disabled={p.syncBusy} onPress={p.onToggleSync}>
+                  {!p.player
+                    ? "Entrar para sincronizar"
+                    : p.syncEnabled
+                      ? "Desativar sincronização"
+                      : "Ativar sincronização"}
+                </Button>
+                {p.syncEnabled && (
+                  <Button secondary disabled={p.syncBusy} onPress={p.onRetrySync}>
+                    Sincronizar agora
+                  </Button>
+                )}
+              </View>
             </>
           ) : step === "difficulty" ? (
             <>
@@ -423,6 +460,31 @@ const v = StyleSheet.create({
     marginTop: 12,
   },
   count: { color: palette.textFaint, fontSize: 13 },
+  choice: {
+    gap: 10,
+    padding: 16,
+    borderRadius: 18,
+    backgroundColor: palette.surface,
+    borderWidth: 1,
+    borderColor: palette.border,
+  },
+  choiceTitle: { fontSize: 18, fontWeight: "800", color: palette.text },
+  progressRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  progressTrack: {
+    flex: 1,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: palette.surfaceAlt,
+    overflow: "hidden",
+  },
+  progressFill: { height: 6, backgroundColor: palette.violet },
+  syncBox: {
+    gap: 10,
+    padding: 16,
+    borderRadius: 18,
+    backgroundColor: palette.surfaceAlt,
+  },
+  syncTitle: { fontSize: 14, fontWeight: "800", color: palette.text },
   description: { fontSize: 14, lineHeight: 21, color: palette.textDim },
   back: { fontSize: 14, color: palette.textDim, paddingVertical: 10 },
   game: {

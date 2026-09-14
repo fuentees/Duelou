@@ -34,7 +34,7 @@ export default function MenuScreen({
           Ranking da Arena
         </Button>
         <Button secondary onPress={() => onNavigate("audio")}>
-          Som e música
+          Configurações
         </Button>
         <Button secondary onPress={() => setHelp(!help)}>
           {help ? "Fechar ajuda" : "Como jogar"}
