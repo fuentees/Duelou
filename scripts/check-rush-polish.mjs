@@ -59,8 +59,10 @@ try {
   await pages[1].getByText("VITÓRIA", { exact: true }).waitFor();
   await pages[1].getByText("Vitória por saída do adversário.", { exact: true }).waitFor();
   await pages[1].screenshot({ path: "work/rush-result.png", fullPage: true });
-  await pages[1].getByRole("button", { name: "Voltar para jogar", exact: true }).click();
-  await pages[1].getByRole("button", { name: "Buscar adversário", exact: true }).waitFor();
+  // "Jogar outra" volta direto pra fila (Ticket de fila por nota), sem passar
+  // pelo lobby — quem quiser sair usa "Menu".
+  await pages[1].getByRole("button", { name: "Jogar outra", exact: true }).click();
+  await pages[1].getByRole("button", { name: "Cancelar", exact: true }).waitFor({ timeout: 10000 });
   assert.deepEqual(errors, []);
   console.log("PASS: lobby 320/390px, cancelar busca, duelo WebSocket isolado, vida e tempo, resultado e retorno ao lobby.");
 } finally {

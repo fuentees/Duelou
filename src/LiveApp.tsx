@@ -245,7 +245,7 @@ export default function LiveApp() {
       <ScrollView contentContainerStyle={s.content}>
         <View style={s.between}>
           <Text style={s.heading}>
-            {section === "ranking" ? "Ranking da Arena" : "Perfil"}
+            {section === "ranking" ? "Ranking" : "Perfil"}
           </Text>
           <Pressable
             accessibilityRole="button"

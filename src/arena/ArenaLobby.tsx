@@ -155,7 +155,7 @@ export default function ArenaLobby({
         {[
           ["01", "Acerte para invocar", "Cada acerto envia uma tropa. Ela avança e luta automaticamente. Os dois jogadores recebem os mesmos desafios, no mesmo nível."],
           ["02", "Construa seu combo", "Acertos seguidos e respostas rápidas invocam tropas mais fortes. Errar quebra o combo."],
-          ["03", "Ou gaste o combo", "Com combo 4, dá pra invocar um tanque na hora — e voltar do zero. Segurar dá tropas melhores, gastar dá pressão agora."],
+          ["03", "Ou gaste o combo", "Com combo 4, dá pra invocar um tanque na hora e voltar do zero. Segurar dá tropas melhores, gastar dá pressão agora."],
           ["04", "Escolha o confronto", "Batedor cerca tanque, tanque atropela soldado, soldado segura batedor. Empilhar um tipo só tem resposta."],
           ["05", "Decida no fim", "Derrube a base rival. Nos últimos 20 segundos o dano à base vale o dobro; se o tempo acabar empatado, decide quem tem mais tropa em campo, maior combo e mais invocações."],
         ].map(([n, title, text]) => <View key={n} style={s.rule}>

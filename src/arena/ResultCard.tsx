@@ -121,9 +121,9 @@ export default function ResultCard({
       {showTutorialInfo && (
         <View style={s.tutorialBox}>
           <Text style={s.tutorialTitle}>Como invocar mais forte</Text>
-          <Text style={s.tutorialLine}>⚡ Batedor — rápido, mas fraco. Cerca tanques.</Text>
-          <Text style={s.tutorialLine}>🛡 Soldado — acerte rápido ou emende combo. Segura batedores.</Text>
-          <Text style={s.tutorialLine}>🛡🛡 Tanque — rápido E com combo x3+. Atropela soldados.</Text>
+          <Text style={s.tutorialLine}>Batedor — rápido, mas fraco. Cerca tanques.</Text>
+          <Text style={s.tutorialLine}>Soldado — acerte rápido ou emende combo. Segura batedores.</Text>
+          <Text style={s.tutorialLine}>Tanque — rápido E com combo x3+. Atropela soldados.</Text>
           <Text style={s.tutorialLine}>
             Combo é sua sequência de acertos seguidos — errar zera ele. Com
             combo 4 dá pra invocar um tanque na hora, gastando o combo.

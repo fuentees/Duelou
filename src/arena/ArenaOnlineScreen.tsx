@@ -36,10 +36,13 @@ const DANGER_THRESHOLD = 25;
 const EDGE_THRESHOLD = 6;
 // Quanto tempo o aviso de invocação fica na tela.
 const SUMMON_TOAST_MS = 1100;
+// Sem emoji: o escudo (🛡) não existe em toda fonte e aparece como outro
+// símbolo em parte dos aparelhos e navegadores. Em campo a tropa já se
+// distingue por forma, tamanho e ícone (ver Troop.tsx).
 const TROOP_LABEL: Record<TroopType, string> = {
-  scout: "⚡ Batedor",
-  soldier: "🛡 Soldado",
-  tank: "🛡🛡 Tanque",
+  scout: "Batedor",
+  soldier: "Soldado",
+  tank: "Tanque",
 };
 
 type Poof = { key: number; position: number; side: Side };
@@ -390,8 +393,8 @@ export default function ArenaOnlineScreen({
             ]}
           >
             {state.combo.player >= COMBO_SPEND_COST
-              ? `🛡🛡 GASTAR COMBO x${COMBO_SPEND_COST} · INVOCAR TANQUE`
-              : `🛡🛡 Tanque na hora: combo ${state.combo.player}/${COMBO_SPEND_COST}`}
+              ? `INVOCAR TANQUE AGORA · GASTA COMBO x${COMBO_SPEND_COST}`
+              : `Tanque na hora: combo ${state.combo.player}/${COMBO_SPEND_COST}`}
           </Text>
         </Pressable>
         <View style={s.panel}>
@@ -408,7 +411,6 @@ export default function ArenaOnlineScreen({
         </View>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Desistir da partida"
           onPress={socket.forfeit}
           style={s.forfeit}
         >
