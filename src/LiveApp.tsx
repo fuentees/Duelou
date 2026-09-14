@@ -198,6 +198,20 @@ export default function LiveApp() {
     <SafeAreaView style={s.screen}>
       <Text style={s.heading}>Carregando seu progresso…</Text>
     </SafeAreaView>
+  ) : !profile ? (
+    // Conta obrigatória pra usar o app — ver AuthScreen. Reaparece sempre que
+    // `profile` fica null (não só na primeira vez): saiu da conta ou excluiu
+    // a conta em qualquer tela caem aqui de novo, não só na aba Perfil.
+    <SafeAreaView style={s.screen}>
+      <AppHeader status="BEM-VINDO" />
+      <AuthScreen
+        busy={busy}
+        error={error}
+        defaultRecoveryOpen={suggestRecovery}
+        onCreate={handleCreateAccount}
+        onRecover={handleRecover}
+      />
+    </SafeAreaView>
   ) : section === "home" ? (
     <HomeScreen player={profile} onNavigate={setSection} />
   ) : section === "menu" ? (
@@ -222,54 +236,44 @@ export default function LiveApp() {
     <ArenaOnlineScreen onExit={() => setSection("menu")} />
   ) : (
     <SafeAreaView style={s.screen}>
-      <AppHeader status={profile?.name || "SUA CONTA"} />
-      {!profile ? (
-        <AuthScreen
-          busy={busy}
-          error={error}
-          defaultRecoveryOpen={suggestRecovery}
-          onCreate={handleCreateAccount}
-          onRecover={handleRecover}
-        />
-      ) : (
-        <ScrollView contentContainerStyle={s.content}>
-          <View style={s.between}>
-            <Text style={s.heading}>
-              {section === "ranking" ? "Ranking da Arena" : "Perfil"}
+      <AppHeader status={profile.name} />
+      <ScrollView contentContainerStyle={s.content}>
+        <View style={s.between}>
+          <Text style={s.heading}>
+            {section === "ranking" ? "Ranking da Arena" : "Perfil"}
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            style={{ minWidth: 44, minHeight: 44, justifyContent: "center" }}
+            accessibilityState={{ disabled: busy }}
+            disabled={busy}
+            onPress={() => action(refresh)}
+          >
+            <Text style={s.accent}>
+              {busy ? "Atualizando…" : "Atualizar"}
             </Text>
-            <Pressable
-              accessibilityRole="button"
-              style={{ minWidth: 44, minHeight: 44, justifyContent: "center" }}
-              accessibilityState={{ disabled: busy }}
-              disabled={busy}
-              onPress={() => action(refresh)}
-            >
-              <Text style={s.accent}>
-                {busy ? "Atualizando…" : "Atualizar"}
-              </Text>
-            </Pressable>
-          </View>
-          {!!error && (
-            <Text accessibilityRole="alert" style={s.error}>
-              {error}
-            </Text>
-          )}
-          {section === "ranking" ? (
-            <RankingTab ranking={ranking} profileId={profile.id} />
-          ) : (
-            <PerfilTab
-              profile={profile}
-              onProfileUpdated={setProfile}
-              history={history}
-              busy={busy}
-              deleting={deleting}
-              setDeleting={setDeleting}
-              onSignOut={handleSignOut}
-              onDeleteAccount={handleDeleteAccount}
-            />
-          )}
-        </ScrollView>
-      )}
+          </Pressable>
+        </View>
+        {!!error && (
+          <Text accessibilityRole="alert" style={s.error}>
+            {error}
+          </Text>
+        )}
+        {section === "ranking" ? (
+          <RankingTab ranking={ranking} profileId={profile.id} />
+        ) : (
+          <PerfilTab
+            profile={profile}
+            onProfileUpdated={setProfile}
+            history={history}
+            busy={busy}
+            deleting={deleting}
+            setDeleting={setDeleting}
+            onSignOut={handleSignOut}
+            onDeleteAccount={handleDeleteAccount}
+          />
+        )}
+      </ScrollView>
       <BottomNav section={section} onChange={setSection} />
     </SafeAreaView>
   );
