@@ -43,20 +43,20 @@ function fakeScheduler() {
   };
 }
 
-function issueUntil(challenges, kind, playerId = "p1", onGo) {
+function issueUntil(challenges, kind, matchId = "m1", onGo) {
   let issued;
-  for (let i = 0; i < 20; i++) {
-    issued = challenges.issue(playerId, 0, onGo);
+  for (let i = 0; i < 40; i++) {
+    issued = challenges.issue({ matchId, index: i, level: 1 }, onGo);
     if (issued.public.kind === kind) return issued;
   }
-  throw new Error(`não saiu nenhum desafio do tipo "${kind}" em 20 tentativas`);
+  throw new Error(`não saiu nenhum desafio do tipo "${kind}" em 40 tentativas`);
 }
 
 test("payload público nunca contém gabarito nem waitMs do reflexo", () => {
   const clock = fakeClock();
   const challenges = createArenaChallenges({ now: clock.now, random: seeded(1) });
   for (let i = 0; i < 20; i++) {
-    const { public: pub } = challenges.issue("p1", i);
+    const { public: pub } = challenges.issue({ matchId: "m1", index: i, level: 1 + i });
     if (pub.kind === "choice") {
       assert.equal("answerIndex" in pub, false, "gabarito não pode ir pro cliente");
       assert.equal("answer" in pub, false);
@@ -182,4 +182,50 @@ test("stop() cancela todos os timers pendentes", () => {
   issueUntil(challenges, "reflex");
   challenges.stop();
   assert.equal(scheduler.pendingCount(), 0);
+});
+
+test("os dois lados da mesma partida recebem exatamente o mesmo desafio no mesmo índice e nível", () => {
+  const a = createArenaChallenges({ now: fakeClock().now, random: seeded(11) });
+  const b = createArenaChallenges({ now: fakeClock(50_000).now, random: seeded(999) });
+  for (let index = 0; index < 12; index++) {
+    const level = 1 + (index % 6);
+    const mine = a.issue({ matchId: "partida-x", index, level });
+    const theirs = b.issue({ matchId: "partida-x", index, level });
+    assert.deepEqual(
+      theirs.public,
+      mine.public,
+      "sorteio não pode decidir a partida: mesmo índice e nível têm que dar o mesmo desafio pros dois lados",
+    );
+  }
+  a.stop();
+  b.stop();
+});
+
+test("partidas diferentes não recebem a mesma sequência de desafios", () => {
+  const challenges = createArenaChallenges({ now: fakeClock().now, random: seeded(12) });
+  const sequenceOf = (matchId) =>
+    Array.from({ length: 10 }, (_, index) =>
+      JSON.stringify(challenges.issue({ matchId, index, level: 3 }).public),
+    ).join("|");
+  assert.notEqual(sequenceOf("partida-a"), sequenceOf("partida-b"));
+  challenges.stop();
+});
+
+test("o nível pedido muda o desafio, e nível fora da escala não quebra nem escapa do teto", () => {
+  const challenges = createArenaChallenges({ now: fakeClock().now, random: seeded(13) });
+  // Um índice que caia em múltipla escolha: o reflexo esconde o waitMs, então
+  // o payload público dele é igual em qualquer nível — de propósito.
+  let index = 0;
+  while (challenges.issue({ matchId: "p", index, level: 1 }).public.kind !== "choice") index++;
+  const facil = challenges.issue({ matchId: "p", index, level: 1 });
+  const dificil = challenges.issue({ matchId: "p", index, level: 12 });
+  assert.notDeepEqual(facil.public, dificil.public);
+  // Nível inválido (0, negativo, absurdo) é preso na faixa em vez de gerar
+  // rodada quebrada — o cliente nunca manda isso, mas o motor da partida é
+  // quem calcula e nunca pode derrubar o servidor inteiro por um número mau.
+  for (const level of [0, -5, 999, NaN]) {
+    const issued = challenges.issue({ matchId: "p", index: 1, level });
+    assert.ok(issued.public.kind === "choice" || issued.public.kind === "reflex");
+  }
+  challenges.stop();
 });

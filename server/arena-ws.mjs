@@ -17,6 +17,7 @@ import { createArenaMatchEngine } from "./arena-match.mjs";
 import { createArenaPersistence } from "./arena-persistence.mjs";
 import { createArenaQueue } from "./arena-queue.mjs";
 import { RECONNECT_GRACE_MS } from "../shared/arena/reconnect.ts";
+import { levelForElapsed } from "../shared/arena/deck.ts";
 
 const hash = (t) => createHash("sha256").update(t).digest("hex");
 const PATH = "/v1/arena-realtime";
@@ -66,8 +67,13 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
     const side = match.sideOf.get(uid);
     const ws = matchSockets.get(matchId)?.get(uid);
     if (!side || !ws) return;
-    const difficulty = match.state.stats[side].challengesTotal;
-    const { challengeId, public: pub } = challenges.issue(uid, difficulty, (cid) => {
+    // Índice no baralho da partida: quantos desafios esse lado já respondeu.
+    // O nível NÃO vem daí — vem do relógio da partida, igual pros dois lados
+    // (ver shared/arena/deck.ts): quem está jogando melhor não pode receber
+    // perguntas mais difíceis que o adversário só por estar na frente.
+    const index = match.state.stats[side].challengesTotal;
+    const level = levelForElapsed(durationSeconds - match.state.timeRemaining, durationSeconds);
+    const { challengeId, public: pub } = challenges.issue({ matchId, index, level }, (cid) => {
       // "Vai!" do reflexo: o cliente nunca sabe waitMs de antemão (ver
       // comentário em arena-challenges.mjs), então é esse aviso em tempo
       // real que diz o momento certo de trocar "ESPERE…" por "TOQUE!".
