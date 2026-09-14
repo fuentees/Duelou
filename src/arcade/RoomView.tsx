@@ -24,10 +24,10 @@ type Member = {
   id: string;
   name: string;
   online: boolean;
-  avatar?:unknown;
-  rank?:number|null;
-  ready?:boolean;
-  forfeited?:boolean;
+  avatar?: unknown;
+  rank?: number | null;
+  ready?: boolean;
+  forfeited?: boolean;
   answered?: number;
   total?: number;
   score: number | null;
@@ -54,8 +54,8 @@ type Room = {
   public: boolean;
   state: string;
   starts: number | null;
-  breakStarted?:number|null;
-  breakUntil?:number|null;
+  breakStarted?: number | null;
+  breakUntil?: number | null;
   ends: number | null;
   serverNow: number;
   config: ArcadeConfig | null;
@@ -118,7 +118,7 @@ export default function RoomView({
   const [showBreakdown, setShowBreakdown] = useState(false);
   const mine = room.members.find((m) => m.id === player?.id);
   const final = room.state === "finished";
-  const lastProof=room.history?.[room.history.length-1];
+  const lastProof = room.history?.[room.history.length - 1];
   const bestWins = Math.max(...room.members.map((m) => m.seriesWins));
   const winners = room.members.filter((m) => m.seriesWins === bestWins);
   const outcome =
@@ -131,7 +131,7 @@ export default function RoomView({
           : "Você perdeu esta disputa";
   return (
     <>
-      <View style={s.row}>
+      <View style={[s.row,{flexWrap:"wrap"}]}>
         <Text style={s.eyebrow}>SALA {room.code}</Text>
         <LiveStatus mode="inline" state={connectionStatus} />
       </View>
@@ -161,7 +161,7 @@ export default function RoomView({
                     alignItems: "center",
                   }}
                 >
-                  <Character avatar={rival.avatar} size={40}/>
+                  <Character avatar={rival.avatar} size={40} />
                   <Text style={s.caption}>
                     {rival.name} · {rival.answered || 0}/{rival.total || 18}{" "}
                     questões · {rival.seriesWins} vitória(s) na série
@@ -280,21 +280,75 @@ export default function RoomView({
       ) : room.state === "intermission" && now < (room.breakUntil || 0) ? (
         <Card active>
           <Text style={s.eyebrow}>RESULTADO DA PROVA {room.gameIndex}</Text>
-          <Text accessibilityLiveRegion="polite" style={s.title}>{lastProof?.winner===player?.id?"Você venceu a prova!":lastProof?.winner?"Seu rival levou esta prova":"Prova empatada"}</Text>
-          <Text style={s.body}>Placar da série: {room.members.map(m=>`${m.name} ${m.seriesWins}`).join(" × ")}</Text>
-          {room.members.map(m=><View key={m.id} style={{flexDirection:"row",alignItems:"center",flexWrap:"wrap",gap:10}}>
-            <Character avatar={m.avatar} size={48}/><Text style={s.member}>{m.name}: {lastProof?.scores[m.id] ?? 0} pts</Text>
-            <Text style={s.caption}>{m.forfeited?"Saiu da série":m.ready?"✓ Pronto":"Lendo resultado"}</Text>
-          </View>)}
-          {lastProof?.details?.map((detail,i)=><Text key={i} style={s.body}>{detail}</Text>)}
-          <Text style={s.eyebrow}>PROVA {room.gameIndex+1} DE {room.gamesNeeded}</Text>
-          <Text style={s.caption}>A próxima prova começa em até {Math.max(0,Math.ceil(((room.starts||now)-now)/1000))}s. Todos prontos antecipam a largada, com pelo menos 5 segundos para ler e 5 de contagem.</Text>
-          <Button disabled={busy || !connected || !!mine?.ready || !!mine?.forfeited} onPress={onReady}>{mine?.ready?"Você está pronto":"Pronto para a próxima"}</Button>
-          {mine?.ready && <Text accessibilityLiveRegion="polite" style={s.caption}>Prontidão confirmada. Aguarde os rivais ou o fim do intervalo.</Text>}
+          <Text accessibilityLiveRegion="polite" style={s.title}>
+            {lastProof?.winner === player?.id
+              ? "Você venceu a prova!"
+              : lastProof?.winner
+                ? "Seu rival levou esta prova"
+                : "Prova empatada"}
+          </Text>
+          <Text style={s.body}>
+            Placar da série:{" "}
+            {room.members.map((m) => `${m.name} ${m.seriesWins}`).join(" × ")}
+          </Text>
+          {room.members.map((m) => (
+            <View
+              key={m.id}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: 10,
+              }}
+            >
+              <Character avatar={m.avatar} size={48} />
+              <Text style={s.member}>
+                {m.name}: {lastProof?.scores[m.id] ?? 0} pts
+              </Text>
+              <Text style={s.caption}>
+                {m.forfeited
+                  ? "Saiu da série"
+                  : m.ready
+                    ? "✓ Pronto"
+                    : "Lendo resultado"}
+              </Text>
+            </View>
+          ))}
+          {lastProof?.details?.map((detail, i) => (
+            <Text key={i} style={s.body}>
+              {detail}
+            </Text>
+          ))}
+          <Text style={s.eyebrow}>
+            PROVA {room.gameIndex + 1} DE {room.gamesNeeded}
+          </Text>
+          <Text style={s.caption}>
+            A próxima prova começa em até{" "}
+            {Math.max(0, Math.ceil(((room.starts || now) - now) / 1000))}s.
+            Todos prontos antecipam a largada, com pelo menos 5 segundos para
+            ler e 5 de contagem.
+          </Text>
+          <Button
+            disabled={busy || !connected || !!mine?.ready || !!mine?.forfeited}
+            onPress={onReady}
+          >
+            {mine?.ready ? "Você está pronto" : "Pronto para a próxima"}
+          </Button>
+          {mine?.ready && (
+            <Text accessibilityLiveRegion="polite" style={s.caption}>
+              Prontidão confirmada. Aguarde os rivais ou o fim do intervalo.
+            </Text>
+          )}
         </Card>
       ) : room.starts && now < room.starts ? (
         <Card active>
-          <BattlePresentation members={room.members} playerId={player?.id}/>
+          <Text
+            accessibilityLiveRegion="polite"
+            style={{ fontSize: 28, fontWeight: "800", textAlign: "center" }}
+          >
+            Começa em {Math.max(1, Math.ceil((room.starts - now) / 1000))}
+          </Text>
+          <BattlePresentation members={room.members} playerId={player?.id} />
           {room.gamesNeeded > 1 && (
             <Text style={s.eyebrow}>
               PROVA {room.gameIndex + 1} DE {room.gamesNeeded}
@@ -311,10 +365,7 @@ export default function RoomView({
               ? "Prepare-se para a próxima prova."
               : "Prepare-se. A mesma prova para todos."}
           </Text>
-          <AnimatedNumber
-            value={Math.ceil((room.starts - now) / 1000)}
-            style={s.score}
-          />
+
           <Text style={s.body}>{game.description}</Text>
         </Card>
       ) : pending ? (
@@ -341,7 +392,14 @@ export default function RoomView({
                 : "PLACAR FINAL"
               : "SEU RESULTADO FOI SALVO"}
           </Text>
-          {final && <BattlePresentation members={room.members} playerId={player?.id} final outcome={outcome}/>}
+          {final && (
+            <BattlePresentation
+              members={room.members}
+              playerId={player?.id}
+              final
+              outcome={outcome}
+            />
+          )}
           {room.ratingResult && (
             <Text style={s.body}>
               {ratingName(room.ratingResult.rating)} ·{" "}

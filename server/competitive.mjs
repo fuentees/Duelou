@@ -258,7 +258,7 @@ export function competitiveRules(db, clock) {
       .all()
       .map((r) => ({
         ...r,
-        avatar:readAvatar(r.avatar),
+        avatar: readAvatar(r.avatar),
         rank: ratingName(r.rating),
         provisional: r.played < 5,
       }));

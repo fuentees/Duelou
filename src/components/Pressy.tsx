@@ -50,6 +50,12 @@ export default function Pressy({
       accessibilityRole={accessibilityRole}
       accessibilityLabel={accessibilityLabel}
       accessibilityState={{ ...accessibilityState, disabled: !!disabled }}
+      aria-checked={
+        accessibilityRole === "radio" ? accessibilityState?.checked : undefined
+      }
+      aria-selected={
+        accessibilityRole === "tab" ? accessibilityState?.selected : undefined
+      }
       disabled={disabled}
       onPress={() => {
         playTap();

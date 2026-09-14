@@ -21,6 +21,7 @@ export default function CharacterEditor({
     [editing, setEditing] = useState(false),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState("");
+  const [yaw, setYaw] = useState(-0.35);
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
@@ -67,11 +68,17 @@ export default function CharacterEditor({
   return (
     <Card>
       <View style={{ alignItems: "center", gap: 12 }}>
-        <Character avatar={draft} size={120} label="Prévia do seu personagem" />
+        <Character avatar={draft} size={180} yaw={yaw} label="Prévia 3D do seu personagem" />
         <Text style={{ fontSize: 22, fontWeight: "800", color: palette.text }}>
           Seu personagem
         </Text>
       </View>
+      <View style={{ flexDirection: "row", justifyContent: "center", flexWrap: "wrap", gap: 8 }}>
+        <Button secondary accessibilityLabel="Girar personagem para a esquerda" onPress={() => setYaw(v => v - Math.PI / 4)}>↶</Button>
+        <Button secondary onPress={() => setYaw(-0.35)}>Frente</Button>
+        <Button secondary accessibilityLabel="Girar personagem para a direita" onPress={() => setYaw(v => v + Math.PI / 4)}>↷</Button>
+      </View>
+      <Text style={{ color: palette.textDim, textAlign: "center", fontSize: 12 }}>Modelo 3D · use as setas para ver todos os lados</Text>
       <Text style={{ color: palette.textDim, lineHeight: 21 }}>
         Seu estilo na batalha e no ranking. Todas as opções são gratuitas e não
         alteram pontos ou habilidade.

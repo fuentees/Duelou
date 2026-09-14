@@ -139,7 +139,7 @@ export default function CompetitiveRound({
           <Text style={s.caption}>
             {busy
               ? "Confirmando resposta…"
-              : "Mais acertos seguidos, mais pontos. Pontuação igual é empate."}
+              : "Mais acertos seguidos, mais pontos. Em pontos iguais, o tempo de conclusão desempata."}
           </Text>
         </>
       ) : (

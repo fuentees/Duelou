@@ -16,6 +16,8 @@ Os detalhes e resultados de provas permanecem enquanto a conta existir, mesmo ap
 
 Observações competitivas incluem tempo de fila, duração observada no servidor, quantidade de respostas e estado de término (conclusão, tempo esgotado, saída ou ausência de início). São vinculadas à conta, retidas por até 90 dias e não equivalem ao motivo relatado pelo jogador. Diagnósticos da API usam contagens agregadas sem dados da conta.
 
+A conta também guarda as opções cosméticas de personagem (tipo, cor, acessório e moldura). Elas aparecem nas salas e no ranking, podem ser alteradas no perfil e são removidas com a conta. Não incluem fotografias nem dados biométricos.
+
 ## Finalidades
 
 Operar partidas e duelos; calcular progresso e ranking; manter sessão; combater abuso; responder suporte; cumprir obrigações legais. Definir bases legais com assessoria antes do lançamento.

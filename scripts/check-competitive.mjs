@@ -147,6 +147,11 @@ try {
     }
   }
   for (let gameIndex = 0; gameIndex < 2; gameIndex++) {
+    if (gameIndex)
+      for (const u of users)
+        await u.page
+          .getByRole("button", { name: "Pronto para a próxima", exact: true })
+          .click();
     await users[0].page.getByText("Rodada 1 / 18", { exact: true }).waitFor();
     if (resilience && gameIndex === 0) {
       // O poll de ArcadeScreen.tsx (Ticket 44) já está rodando desde que a

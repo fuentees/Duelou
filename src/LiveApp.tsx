@@ -18,7 +18,7 @@ import HomeScreen from "./HomeScreen";
 import MenuScreen from "./MenuScreen";
 import AudioSettingsScreen from "./AudioSettingsScreen";
 import Arcade from "./arcade/ArcadeScreen";
-import ArenaOnlineScreen from "./arena/ArenaOnlineScreen";
+import ArenaLobby from "./arena/ArenaLobby";
 import { gradients } from "./theme";
 import Button from "./components/Button";
 import BottomNav, { Section } from "./components/BottomNav";
@@ -28,6 +28,7 @@ import RankingTab from "./live/RankingTab";
 import PerfilTab from "./live/PerfilTab";
 import { s } from "./live/styles";
 type Profile = {
+  avatar?: unknown;
   id: string;
   name: string;
   xp: number;
@@ -233,7 +234,7 @@ export default function LiveApp() {
     // PvP é o único modo agora (decisão do usuário) — o modo contra bot
     // (ArenaScreen/bot.ts) continua no repositório, testado, só deixa de
     // ser alcançado por aqui.
-    <ArenaOnlineScreen onExit={() => setSection("menu")} />
+    <ArenaLobby avatar={profile.avatar} onExit={() => setSection("menu")} />
   ) : (
     <SafeAreaView style={s.screen}>
       <AppHeader status={profile.name} />

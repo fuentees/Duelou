@@ -27,10 +27,14 @@ export default function RankingTab({
           <LinearGradient
             key={r.id}
             colors={r.id === profileId ? gradients.cardActive : gradients.card}
-            style={[s.between, s.rankRow]}
+            style={[s.between, s.rankRow, {flexWrap:"wrap"}]}
           >
-            <Character avatar={r.avatar} size={48} label={`Personagem de ${r.name}`}/>
-            <Text style={r.id === profileId ? s.accent : s.heading}>
+            <Character
+              avatar={r.avatar}
+              size={48}
+              label={`Personagem de ${r.name}`}
+            />
+            <Text style={[r.id === profileId ? s.accent : s.heading,{flex:1,minWidth:100}]}>
               {i === 0 ? "🥇 " : i === 1 ? "🥈 " : i === 2 ? "🥉 " : ""}
               {i + 1}. {r.name}
             </Text>

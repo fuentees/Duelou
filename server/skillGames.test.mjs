@@ -61,7 +61,7 @@ test("todos os novos jogos usam salas, níveis, resultados, ranking, replay e MD
    await call("/v1/rooms/"+room.code+"/start",a.token,{});
    const rounds=mode==="memory"?2:1;
    for(let gameIndex=0;gameIndex<rounds;gameIndex++){
-    now+=5000;
+    now+=gameIndex?25000:5000;
     const c=JSON.parse(app.db.prepare("SELECT config FROM rooms WHERE code=?").get(room.code).config);
     const answers=perfect(c);
     const minMs=minimumAttemptMs(c,answers);
@@ -79,7 +79,7 @@ test("todos os novos jogos usam salas, níveis, resultados, ranking, replay e MD
     const final=await call("/v1/rooms/"+room.code+"/finish",b.token,{answers:[],gameIndex});
     assert.equal(final.status,200);
     if(mode==="memory"&&gameIndex===0){
-      assert.equal(final.data.state,"countdown");
+      assert.equal(final.data.state,"intermission");
       assert.equal(final.data.gameIndex,1);
       assert.equal((await call("/v1/rooms/"+room.code+"/finish",a.token,{answers,gameIndex})).status,409);
     }else{

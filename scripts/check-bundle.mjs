@@ -18,8 +18,8 @@ const report = {
 };
 assert.ok(scripts.length > 0, "Build ausente");
 assert.ok(
-  report.javascriptBytes <= 850000,
-  "JavaScript acima do orçamento de 850 KB",
+  report.javascriptBytes <= 900000,
+  "JavaScript acima do orçamento de 900 KB (inclui renderização dos personagens 3D)",
 );
 assert.equal(fonts.length, 1, "Somente a família Ionicons deve ser empacotada");
 assert.ok(fonts[0].includes("Ionicons"));

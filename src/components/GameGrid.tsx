@@ -44,6 +44,7 @@ export default function GameGrid({
             )}
             <View style={s.caption}>
               <Text style={s.name}>{g.name}</Text>
+              <Text numberOfLines={2} style={s.description}>{g.desc}</Text>
             </View>
           </Pressy>
         );
@@ -53,7 +54,7 @@ export default function GameGrid({
 }
 const s = StyleSheet.create({
   grid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
-  item: { width: "48%", flexGrow: 1, maxWidth: "49%" },
+  item: { width: "47%", maxWidth: 180 },
   card: {
     borderRadius: 14,
     overflow: "hidden",
@@ -61,7 +62,7 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: palette.border,
   },
-  image: { width: "100%", aspectRatio: 1.3 },
+  image: { width: "100%", height: 96 },
   fallback: { alignItems: "center", justifyContent: "center" },
   fallbackSymbol: { fontSize: 40, fontWeight: "800", color: "#FFFFFF" },
   caption: {
@@ -72,4 +73,5 @@ const s = StyleSheet.create({
     justifyContent: "center",
   },
   name: { fontSize: 14, fontWeight: "800", color: "#FFFFFF" },
+  description: { fontSize: 12, lineHeight: 17, minHeight: 34, marginTop: 4, color: "#DCE3F2" },
 });

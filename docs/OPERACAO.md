@@ -12,6 +12,8 @@ Node 22.13+ e npm. Execute `npm ci`, `npm run api` e, em outro terminal, `npm ru
 
 - POST /v1/guests cria conta e código de recuperação; POST /v1/sessions/recover troca a sessão.
 - GET /v1/me fornece perfil; DELETE /v1/session sai; DELETE /v1/me exclui a conta.
+- POST /v1/avatar salva opções cosméticas validadas; o perfil e os membros da sala retornam o personagem.
+- POST /v1/rooms/:code/ready confirma prontidão no intervalo do MD3 com o gameIndex atual.
 - GET /v1/history retorna 30 provas detalhadas; `?before=cursor` busca a página anterior. O histórico individual permanece após a limpeza de salas, enquanto a conta existir.
 - GET/POST /v1/campaign/:mode consulta/une progresso solo da conta autenticada. A sincronização é opcional e não concede XP, moedas ou classificação.
 - /v1/rooms contém salas casuais, continuação, revanche, fila competitiva, rodadas, presença e classificação. Competitivo e casual têm regras separadas.

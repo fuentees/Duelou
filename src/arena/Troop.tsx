@@ -1,9 +1,11 @@
 import React, { useEffect, useRef } from "react";
 import { Animated, Text, View } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import type { Troop as TroopData, TroopType } from "../../shared/arena/engine";
 import useReducedMotion from "../useReducedMotion";
 import { ENEMY_COLOR, PLAYER_COLOR } from "./colors";
+import { LinearGradient } from "expo-linear-gradient";
+import { shade } from "../theme";
 
 // Diferencia por forma/tamanho, não só cor — scout pequeno e ágil, tank
 // grande e pesado; cada um com um ícone próprio, pra não depender de
@@ -76,11 +78,15 @@ export default function Troop({
         transform: [{ scale }],
       }}
     >
-      <View
+      <LinearGradient
+        colors={[shade(color, 0.3), color, shade(color, -0.35)]}
+        start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
         style={{
           width: visual.size,
           height: visual.size,
-          borderRadius: visual.size / 2,
+          borderRadius: visual.size * (troop.type === "tank" ? 0.22 : troop.type === "soldier" ? 0.35 : 0.5),
+          borderWidth: 2,
+          borderColor: "#FFFFFF",
           backgroundColor: color,
           alignItems: "center",
           justifyContent: "center",
@@ -89,8 +95,11 @@ export default function Troop({
           opacity: 0.45 + 0.55 * hpRatio,
         }}
       >
-        <Ionicons name={visual.icon} size={visual.size * 0.55} color="#FFFFFF" />
-      </View>
+        <View style={{ width: visual.size * 0.65, height: visual.size * 0.27, borderRadius: 5, backgroundColor: "#18233B", flexDirection: "row", justifyContent: "space-evenly", alignItems: "center" }}>
+          {[0, 1].map(eye => <View key={eye} style={{ width: 3, height: 4, borderRadius: 1, backgroundColor: "#E1FFF8" }} />)}
+        </View>
+        <Ionicons name={visual.icon} size={visual.size * 0.26} color="#FFFFFF" />
+      </LinearGradient>
       {/* Barrinha de vida — sem isso, a troca de dano no combate é uma caixa
           preta: dá pra ver o ícone perdendo cor, mas não "quanto falta". */}
       {hpRatio < 1 && (

@@ -17,6 +17,8 @@
     "test:api": "node --experimental-sqlite --test server/server.test.mjs server/rooms.test.mjs server/skillGames.test.mjs server/competitive.test.mjs server/continuation.test.mjs server/rate-limit.test.mjs server/operations.test.mjs server/battle.test.mjs server/arena-challenges.test.mjs server/arena-match.test.mjs server/arena-persistence.test.mjs server/arena-queue.test.mjs server/arena-ws.test.mjs",
     "test:ui": "node --experimental-sqlite scripts/check-unified-games.mjs",
     "test:character": "node scripts/check-character.mjs",
+    "test:character-mesh": "node --test shared/character3d.test.mjs",
+    "test:rush-polish": "node scripts/check-rush-polish.mjs",
     "test:sync": "node scripts/check-campaign-sync.mjs",
     "test:account": "node --experimental-sqlite scripts/check-account-menu.mjs",
     "test:arcade": "node --experimental-sqlite scripts/check-unified-games.mjs",
@@ -49,6 +51,7 @@
     "react-dom": "19.2.3",
     "react-native": "0.86.3",
     "react-native-safe-area-context": "~5.7.0",
+    "react-native-svg": "15.15.4",
     "react-native-web": "^0.21.0"
   },
   "devDependencies": {

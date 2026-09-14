@@ -59,10 +59,10 @@ type Member = {
   id: string;
   name: string;
   online: boolean;
-  avatar?:unknown;
-  ready?:boolean;
-  forfeited?:boolean;
-  rank?:number|null;
+  avatar?: unknown;
+  ready?: boolean;
+  forfeited?: boolean;
+  rank?: number | null;
   score: number | null;
   seriesWins: number;
   durationMs: number | null;
@@ -96,8 +96,8 @@ type Room = {
   public: boolean;
   state: string;
   starts: number | null;
-  breakStarted?:number|null;
-  breakUntil?:number|null;
+  breakStarted?: number | null;
+  breakUntil?: number | null;
   ends: number | null;
   serverNow: number;
   config: ArcadeConfig | null;
@@ -727,8 +727,7 @@ export default function ArcadeScreen({
             <Lesson
               mode={offline.mode}
               level={offline.difficulty}
-              onReady={() => act(async () => {adopt(await api<Room>(`/v1/rooms/${room!.code}/ready`,{gameIndex:room!.gameIndex}));})}
-          onStart={() => setLesson(false)}
+              onStart={() => setLesson(false)}
             />
           ) : (
             <Round
@@ -752,8 +751,16 @@ export default function ArcadeScreen({
             now={now}
             busy={busy}
             pending={pending}
-            onReady={() => act(async () => {adopt(await api<Room>(`/v1/rooms/${room!.code}/ready`,{gameIndex:room!.gameIndex}));})}
-          onStart={() =>
+            onReady={() =>
+              act(async () => {
+                adopt(
+                  await api<Room>(`/v1/rooms/${room!.code}/ready`, {
+                    gameIndex: room!.gameIndex,
+                  }),
+                );
+              })
+            }
+            onStart={() =>
               act(async () =>
                 adopt(await api<Room>(`/v1/rooms/${room.code}/start`, {})),
               )

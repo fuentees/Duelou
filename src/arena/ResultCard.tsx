@@ -4,6 +4,8 @@ import Button from "../components/Button";
 import { palette, radius } from "../theme";
 import { ENEMY_COLOR, PLAYER_COLOR } from "./colors";
 import type { ArenaState } from "../../shared/arena/engine";
+import Character from "../components/Character";
+import { LinearGradient } from "expo-linear-gradient";
 
 const err = (e: unknown) => (e instanceof Error ? e.message : "Algo deu errado.");
 
@@ -14,6 +16,9 @@ export default function ResultCard({
   onRematch,
   onMenu,
   onError,
+  rematchLabel = "Revanche",
+  avatar,
+  playerName,
 }: {
   state: ArenaState;
   // Se a própria base do jogador chegou a ficar crítica em algum momento e
@@ -25,6 +30,9 @@ export default function ResultCard({
   onRematch: () => void;
   onMenu: () => void;
   onError?: (message: string) => void;
+  rematchLabel?: string;
+  avatar?: unknown;
+  playerName?: string;
 }) {
   // Sempre a perspectiva de quem está vendo a tela — em PvP, o cliente já
   // recebe o estado invertido pra "player" ser sempre "eu" (ver Ticket 21).
@@ -35,12 +43,15 @@ export default function ResultCard({
     ? Math.round((100 * stats.hits) / stats.challengesTotal)
     : 0;
   const won = state.winner === "player";
-  const highlight = won
+  const endedByExit = state.timeRemaining > 0 && state.playerBaseHp > 0 && state.enemyBaseHp > 0 && state.winner !== "draw";
+  const highlight = endedByExit
+    ? won ? "Vitória por saída do adversário." : "A partida foi encerrada por saída."
+    : won
     ? comeback
       ? "Virou nos últimos segundos!"
       : stats.maxCombo >= 6
         ? "Sequência impecável de acertos!"
-        : "Base inimiga derrubada!"
+        : state.enemyBaseHp <= 0 ? "Base inimiga derrubada!" : "Sua base resistiu melhor até o fim!"
     : state.winner === "enemy"
       ? "Quase lá — bora de novo?"
       : "Ninguém levou a melhor desta vez.";
@@ -57,8 +68,13 @@ export default function ResultCard({
   return (
     <View style={s.card} accessibilityLabel={`Resultado: ${outcome}`}>
       <Text style={s.brand}>DUELOU · ARENA RUSH</Text>
+      <LinearGradient colors={won ? ["#FFF3CA", "#EFE7FF"] : ["#E8ECFA", "#F6F8FF"]}
+        style={{ alignItems: "center", gap: 10, padding: 20, borderRadius: 24, alignSelf: "stretch" }}>
+        <Character avatar={avatar} size={80} />
+        {!!playerName && <Text style={s.highlight}>{playerName}</Text>}
       <Text style={[s.outcome, won && s.outcomeWon]}>{outcome}</Text>
       <Text style={s.highlight}>{highlight}</Text>
+      </LinearGradient>
       <View style={s.scoreRow}>
         <View style={s.scoreBlock}>
           <Text style={[s.scoreValue, { color: PLAYER_COLOR }]}>{Math.round(state.playerBaseHp)}</Text>
@@ -75,6 +91,13 @@ export default function ResultCard({
         <Text style={s.stat}>⚔ {stats.hits} bonecos</Text>
         <Text style={s.stat}>🎯 {accuracy}% de acerto</Text>
       </View>
+      <Text style={s.highlight}>
+        {stats.challengesTotal === 0
+          ? "Responda aos desafios para invocar suas tropas."
+          : accuracy < 70
+            ? "Na próxima: priorize acertar para manter suas tropas em campo."
+            : "Na próxima: combine precisão e velocidade para invocar tropas mais fortes."}
+      </Text>
       {showTutorialInfo && (
         <View style={s.tutorialBox}>
           <Text style={s.tutorialTitle}>Como invocar mais forte</Text>
@@ -86,7 +109,7 @@ export default function ResultCard({
           </Text>
         </View>
       )}
-      <Button onPress={onRematch}>Revanche</Button>
+      <Button onPress={onRematch}>{rematchLabel}</Button>
       <Button
         secondary
         accessibilityLabel="Compartilhar resultado"
@@ -96,9 +119,9 @@ export default function ResultCard({
       >
         Compartilhar resultado
       </Button>
-      <Button secondary onPress={onMenu}>
+      {onMenu !== onRematch && <Button secondary onPress={onMenu}>
         Menu
-      </Button>
+      </Button>}
       <Text style={s.privacy}>
         O que você compartilha mostra só o seu resultado — nada do adversário. Compartilhar é sempre sua escolha, o app nunca publica nada sozinho.
       </Text>

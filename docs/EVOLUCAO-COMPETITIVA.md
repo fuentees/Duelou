@@ -1,3 +1,5 @@
+Atualização de batalha e personalização: veja [BATALHA-E-PERSONAGENS.md](BATALHA-E-PERSONAGENS.md), que também registra a regra de desempate atual e substitui os trechos históricos abaixo quando houver divergência.
+
 ## Revisão de qualidade — 13/09/2026
 
 Limite por conta, importação direta da fonte Ionicons, movimento reduzido, foco de teclado, controles de áudio com área de toque, cabeçalhos e nomes sem corte. Backup periódico cifrado em worker, restauração protegida, probe de saúde e métricas de término/fila. Instruções atuais em OPERACAO.md; protocolo humano em PILOTO-E-DISPOSITIVOS.md. Nenhuma implantação externa nesta revisão.

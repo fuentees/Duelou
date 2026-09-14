@@ -48,6 +48,15 @@ try {
   };
   await page.goto("http://localhost:8083");
   await profile();
+  const preview = page.getByLabel("Prévia 3D do seu personagem", { exact: true });
+  const frontGeometry = await preview.locator("polygon").first().getAttribute("points");
+  await preview.screenshot({ path: "work/personagem-3d-frente.png" });
+  for (let turn = 0; turn < 4; turn++)
+    await page.getByRole("button", { name: "Girar personagem para a direita", exact: true }).click();
+  assert.notEqual(await preview.locator("polygon").first().getAttribute("points"), frontGeometry);
+  await preview.screenshot({ path: "work/personagem-3d-costas.png" });
+  await page.getByRole("button", { name: "Frente", exact: true }).click();
+  assert.equal(await preview.locator("polygon").first().getAttribute("points"), frontGeometry);
   await page
     .getByRole("button", { name: "Personalizar personagem", exact: true })
     .click();

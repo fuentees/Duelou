@@ -129,7 +129,7 @@ export function createApp(
     ];
     return {
       ...p,
-      avatar:readAvatar(p.avatar),
+      avatar: readAvatar(p.avatar),
       competitive: (() => {
         const r = get(
           "SELECT rating,played,wins FROM competitive_ratings WHERE player=?",
@@ -345,10 +345,14 @@ export function createApp(
         );
         return send(200, { revoked: true });
       }
-      if(route === "/v1/avatar" && req.method === "POST"){
-        if(!validAvatar(body))fail(400,"Escolha um personagem válido.");
-        run("UPDATE players SET avatar=? WHERE id=?",JSON.stringify(body),uid);
-        return send(200,profile(uid));
+      if (route === "/v1/avatar" && req.method === "POST") {
+        if (!validAvatar(body)) fail(400, "Escolha um personagem válido.");
+        run(
+          "UPDATE players SET avatar=? WHERE id=?",
+          JSON.stringify(body),
+          uid,
+        );
+        return send(200, profile(uid));
       }
       if (route === "/v1/me" && req.method === "GET")
         return send(200, profile(uid));

@@ -299,9 +299,11 @@ export default function ArenaScreen({
             Responda desafios pra invocar bonecos e derrube a base do
             adversário antes que ele derrube a sua.
           </Text>
+          <Text style={s.body}>Treino contra bot · até 100 segundos. Se o tempo acabar, vence a base com mais vida.</Text>
           <Button disabled={onboarded === null} onPress={startMatch}>
             Entrar na Arena
           </Button>
+          {!!onExit && <Button secondary onPress={onExit}>Voltar ao menu</Button>}
         </View>
       ) : screen === "playing" ? (
         <Animated.View style={[s.match, { transform: [{ translateX: shakeX }] }]}>

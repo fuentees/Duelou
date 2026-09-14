@@ -63,7 +63,7 @@ test("saída competitiva é definitiva e não duplica a classificação", () => 
       /encerrada/,
     );
     for (let gameIndex = 0; gameIndex < 2; gameIndex++) {
-      if (gameIndex) h.advance(5000);
+      if (gameIndex) h.advance(25000);
       h.call(`/v1/rooms/${r.code}/round`, "a", { gameIndex });
       const config = h.config(r.code);
       for (let index = 0; index < config.rounds.length; index++) {
@@ -98,7 +98,7 @@ test("grupo MD3 termina 1–1–1 sem vencedor inventado", () => {
     for (const uid of ["b", "c"]) h.call(`/v1/rooms/${r.code}/join`, uid, {});
     h.call(`/v1/rooms/${r.code}/start`, "a", {});
     for (let gameIndex = 0; gameIndex < 3; gameIndex++) {
-      h.advance(5000);
+      h.advance(gameIndex ? 25000 : 5000);
       const config = h.config(r.code);
       for (const [i, uid] of ["a", "b", "c"].entries())
         h.call(`/v1/rooms/${r.code}/finish`, uid, {
@@ -159,7 +159,7 @@ test("fila oficial: configuração comum, respostas por etapa, replay e classifi
     );
     assert.equal(h.call("/v1/rooms/competitive", "b", {}).code, r.code);
     for (let gameIndex = 0; gameIndex < 2; gameIndex++) {
-      h.advance(5100);
+      h.advance(gameIndex ? 25100 : 5100);
       const live = h.call(`/v1/rooms/${r.code}`, "a");
       assert.deepEqual(live.config.rounds, []);
       assert.throws(
@@ -254,7 +254,7 @@ test("fila oficial: configuração comum, respostas por etapa, replay e classifi
     h.close();
   }
 });
-test("empates ignoram rede; salas privadas não podem forjar classificação", () => {
+test("empate em pontos é resolvido por quem respondeu mais rápido; salas privadas não podem forjar classificação", () => {
   const h = harness();
   try {
     const r = h.call("/v1/rooms", "a", {
@@ -271,8 +271,11 @@ test("empates ignoram rede; salas privadas não podem forjar classificação", (
     h.call(`/v1/rooms/${r.code}/finish`, "a", { answers });
     h.advance(1000);
     const final = h.call(`/v1/rooms/${r.code}/finish`, "b", { answers });
-    assert.ok(final.members.every((m) => m.seriesWins === 0));
-    assert.equal(final.history[0].winner, null);
+    // Mesma pontuação (mesmas respostas); "a" respondeu 1s mais rápido e
+    // por isso vence a prova — pontos primeiro, tempo de resposta desempata.
+    assert.equal(final.members.find((m) => m.id === "a").seriesWins, 1);
+    assert.equal(final.members.find((m) => m.id === "b").seriesWins, 0);
+    assert.equal(final.history[0].winner, "a");
     assert.deepEqual(h.call("/v1/rooms/leaderboard", "a"), []);
   } finally {
     h.close();
@@ -367,7 +370,7 @@ test("série empatada conta uma vez; configuração expirada preserva respostas 
     const r = h.call("/v1/rooms/competitive", "a", {});
     h.call("/v1/rooms/competitive", "b", {});
     for (let gameIndex = 0; gameIndex < 3; gameIndex++) {
-      h.advance(5000);
+      h.advance(gameIndex ? 25000 : 5000);
       for (const uid of ["a", "b"])
         h.call(`/v1/rooms/${r.code}/round`, uid, { gameIndex });
       const config = h.config(r.code);
@@ -488,7 +491,7 @@ test("seis séries contra o mesmo rival limitam pontos sem banir jogador rápido
       const room = h.call("/v1/rooms/competitive", "a", {});
       h.call("/v1/rooms/competitive", "b", {});
       for (let gameIndex = 0; gameIndex < 3; gameIndex++) {
-        h.advance(5000);
+        h.advance(gameIndex ? 25000 : 5000);
         const path = `/v1/rooms/${room.code}/round`;
         for (const uid of ["a", "b"]) h.call(path, uid, { gameIndex });
         const config = h.config(room.code);

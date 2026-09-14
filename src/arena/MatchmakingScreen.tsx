@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Animated, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Button from "../components/Button";
@@ -20,6 +20,14 @@ export default function MatchmakingScreen({
   const reducedMotion = useReducedMotion();
   const pulse = useRef(new Animated.Value(0.4)).current;
   const stalled = status === "error" || status === "reconnecting";
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    setSeconds(0);
+    if (status !== "queued") return;
+    const started = Date.now();
+    const timer = setInterval(() => setSeconds(Math.floor((Date.now() - started) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [status]);
 
   useEffect(() => {
     if (reducedMotion || stalled) return;
@@ -60,6 +68,12 @@ export default function MatchmakingScreen({
               {status === "connecting" ? "Conectando…" : "Procurando adversário…"}
             </Text>
             <Text style={s.body}>Assim que alguém entrar, a partida começa na hora.</Text>
+            {status === "queued" && <Text style={s.body}>Tempo na fila: {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}</Text>}
+            <Text style={s.body}>
+              {seconds >= 30
+                ? "A busca está demorando. Você pode continuar esperando ou cancelar e voltar ao menu."
+                : "Acerte desafios para invocar tropas. Uma sequência de acertos ajuda a criar tropas mais fortes."}
+            </Text>
           </>
         )}
         <Button secondary onPress={onCancel}>

@@ -183,13 +183,16 @@ test("salas: descoberta, sorteio por nível, grupo, largada, placar, replay e sa
     await call("/v1/rooms/" + r.code + "/finish", c.token, { answers: [] });
     const finalRoom = (await call("/v1/rooms/" + r.code, a.token)).data;
     assert.equal(finalRoom.state, "finished");
-    assert.ok(finalRoom.members.every(m=>m.seriesWins===0));
-    assert.equal(finalRoom.history[0].winner,null);
     assert.ok(finalRoom.members.find(m=>m.id===a.profile.id).durationMs < finalRoom.members.find(m=>m.id===b.profile.id).durationMs);
+    // Mesma pontuação de 'a' e 'b' (1.000); 'a' respondeu mais rápido e por
+    // isso vence — pontos primeiro, tempo de resposta desempata.
+    assert.equal(finalRoom.members.find(m=>m.id===a.profile.id).seriesWins,1);
+    assert.ok(finalRoom.members.filter(m=>m.id!==a.profile.id).every(m=>m.seriesWins===0));
+    assert.equal(finalRoom.history[0].winner,a.profile.id);
     // 'a' venceu com 1.000 pontos no nível 1 (seu nível atual): sobe pro nível 2.
     assert.deepEqual((await call("/v1/rooms/stats", a.token)).data, {
       played: 1,
-      wins: 0,
+      wins: 1,
       best: 1000,
       average: 1000,
       level: 2,
@@ -260,7 +263,7 @@ test("salas: descoberta, sorteio por nível, grupo, largada, placar, replay e sa
     now += 86400001;
     assert.deepEqual((await call("/v1/rooms/stats", a.token)).data, {
       played: 1,
-      wins: 0,
+      wins: 1,
       best: 1000,
       average: 1000,
       level: 2,
@@ -494,7 +497,7 @@ test("MD3: série melhor-de-3 continua entre provas e só fecha quando alguém v
     now += 6000;
     // Prova 1: b vence.
     const afterGame1 = await playGame(room.code);
-    assert.equal(afterGame1.state, "countdown", "série continua — só 1 de 3");
+    assert.equal(afterGame1.state, "intermission", "série continua — só 1 de 3");
     assert.equal(afterGame1.gameIndex, 1);
     assert.equal(afterGame1.history.length, 1);
     assert.equal(afterGame1.history[0].winner, b.profile.id);
@@ -505,7 +508,7 @@ test("MD3: série melhor-de-3 continua entre provas e só fecha quando alguém v
     // Exatamente no instante da largada da prova 2 (sem folga nenhuma) — cobre
     // a corrida que o teste de navegador (check-md3.mjs) pegava: resultado
     // rápido demais sendo rejeitado como "partida ainda não começou".
-    now += 5000;
+    now += 25000;
     // Prova 2: b vence de novo — 2 a 0, série decidida.
     const afterGame2 = await playGame(room.code);
     assert.equal(afterGame2.state, "finished");

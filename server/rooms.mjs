@@ -73,13 +73,17 @@ export function roomRoutes(db, clock) {
   addColumn("rooms", "next_action", "next_action TEXT");
   addColumn("rooms", "ranked", "ranked INTEGER NOT NULL DEFAULT 0");
   addColumn("room_members", "progress", "progress TEXT");
-  addColumn("room_members", "forfeited", "forfeited INTEGER NOT NULL DEFAULT 0");
+  addColumn(
+    "room_members",
+    "forfeited",
+    "forfeited INTEGER NOT NULL DEFAULT 0",
+  );
   addColumn("rooms", "break_started", "break_started INTEGER");
   addColumn("rooms", "break_until", "break_until INTEGER");
   addColumn("room_members", "ready", "ready INTEGER NOT NULL DEFAULT 0");
   addColumn("players", "avatar", "avatar TEXT");
   const competitive = competitiveRules(db, clock);
-  const storage = persistence(db,clock);
+  const storage = persistence(db, clock);
   storage.backfill();
   const gamesFor = (format) => (format === "md3" ? 3 : 1);
   const winsFor = (format) => (format === "md3" ? 2 : 1);
@@ -95,17 +99,21 @@ export function roomRoutes(db, clock) {
   const configOf = (room) => JSON.parse(room.config);
   const endOf = (room) => room.starts + (configOf(room).seconds || 60) * 1000;
   const state = (room) =>
-    room.counted ? "finished" : room.break_until && clock() < room.break_until ? "intermission" : !room.starts
-      ? "waiting"
-      : clock() < room.starts
-        ? "countdown"
-        : clock() > endOf(room) + 10000 ||
-            !one(
-              "SELECT 1 FROM room_members WHERE room=? AND score IS NULL",
-              room.code,
-            )
-          ? "finished"
-          : "playing";
+    room.counted
+      ? "finished"
+      : room.break_until && clock() < room.break_until
+        ? "intermission"
+        : !room.starts
+          ? "waiting"
+          : clock() < room.starts
+            ? "countdown"
+            : clock() > endOf(room) + 10000 ||
+                !one(
+                  "SELECT 1 FROM room_members WHERE room=? AND score IS NULL",
+                  room.code,
+                )
+              ? "finished"
+              : "playing";
   const finalize = (room) => {
     if (room.counted || !room.starts || clock() < room.starts) return;
     const allDone = !one(
@@ -143,15 +151,28 @@ export function roomRoutes(db, clock) {
       room.code,
     );
     const roomLevel = configOf(room).difficulty || 1;
-    storage.archive(room,configOf(room),results);
-    if(room.ranked)for(const result of results)competitive.observe(room,result,configOf(room));
-    // A ordenação estabiliza a apresentação; somente uma nota estritamente
-    // maior pode vencer. Tempo de transporte não quebra empates.
+
+    if (room.ranked)
+      for (const result of results)
+        competitive.observe(room, result, configOf(room));
+    // Mais pontos vence; empatado em pontos, quem respondeu mais rápido
+    // (ORDER BY acima já resolve isso por `finished`) — só quem não pontuou
+    // nada não pode ganhar (evita coroar alguém numa sala zerada).
     const winner =
       results[0]?.score > 0 &&
-      (results.length === 1 || results[0].score > results[1].score)
+      (!results[1] ||
+        results[0].score > results[1].score ||
+        results[0].finished < results[1].finished)
         ? results[0].player
         : null;
+    storage.archive(
+      room,
+      configOf(room),
+      results,
+      room.game_index,
+      false,
+      winner,
+    );
     // Estatísticas pessoais (partidas, vitórias, melhor, média) contam por
     // prova individual — mesma escala de 0 a 1.000, seja MD1 ou dentro de um MD3.
     results.forEach((result) => {
@@ -209,15 +230,19 @@ export function roomRoutes(db, clock) {
       room.history = JSON.stringify(history);
       return;
     }
-    const nextConfig = configOf(room).competitiveVersion ? makeCompetitive(room.mode,roomLevel) : makeArcade(room.mode, roomLevel);
-    const breakStarted=clock(), breakUntil=breakStarted+20000;
+    const nextConfig = configOf(room).competitiveVersion
+      ? makeCompetitive(room.mode, roomLevel)
+      : makeArcade(room.mode, roomLevel);
+    const breakStarted = clock(),
+      breakUntil = breakStarted + 20000;
     const nextStarts = breakUntil + 5000;
     run(
       "UPDATE rooms SET config=?,game_index=game_index+1,starts=?,history=?,break_started=?,break_until=? WHERE code=?",
       JSON.stringify(nextConfig),
       nextStarts,
       JSON.stringify(history),
-      breakStarted,breakUntil,
+      breakStarted,
+      breakUntil,
       room.code,
     );
     run(
@@ -230,7 +255,8 @@ export function roomRoutes(db, clock) {
         nextStarts,
         room.code,
       );
-    room.break_started=breakStarted;room.break_until=breakUntil;
+    room.break_started = breakStarted;
+    room.break_until = breakUntil;
     room.config = JSON.stringify(nextConfig);
     room.starts = nextStarts;
     room.game_index = room.game_index + 1;
@@ -280,16 +306,21 @@ export function roomRoutes(db, clock) {
       .map((m) => ({
         id: m.id,
         name: m.name,
-        avatar:readAvatar(m.avatar),
-        ready:!!m.ready,forfeited:!!m.forfeited,
-        rank:room.ranked ? competitive.rating(m.id).rating : null,
+        avatar: readAvatar(m.avatar),
+        ready: !!m.ready,
+        forfeited: !!m.forfeited,
+        rank: room.ranked ? competitive.rating(m.id).rating : null,
         score: m.score,
         details:
           m.score !== null && (m.id === uid || state(room) === "finished")
             ? resultDetails(config, JSON.parse(m.answers || "[]"))
             : [],
-        answered: m.progress ? JSON.parse(m.progress).answers.length : (m.score!==null?config.rounds.length:0),
-        total:config.rounds.length,
+        answered: m.progress
+          ? JSON.parse(m.progress).answers.length
+          : m.score !== null
+            ? config.rounds.length
+            : 0,
+        total: config.rounds.length,
         seriesWins: m.series_wins,
         online: clock() - m.seen < 16000,
         durationMs:
@@ -310,8 +341,23 @@ export function roomRoutes(db, clock) {
       format,
       gameIndex: room.game_index || 0,
       gamesNeeded: gamesFor(format),
-      history: JSON.parse(room.history || "[]").map((h,index)=>({...h,details:JSON.parse(one("SELECT details FROM game_history WHERE player=? AND room=? AND game_index=?",uid,room.code,index)?.details || "[]")})),
-      ratingNotice:room.ranked && members.length===2 && competitive.pairCount(members[0].id,members[1].id,room.code)>=5?"Limite diário com este rival: esta série não altera a classificação.":null,
+      history: JSON.parse(room.history || "[]").map((h, index) => ({
+        ...h,
+        details: JSON.parse(
+          one(
+            "SELECT details FROM game_history WHERE player=? AND room=? AND game_index=?",
+            uid,
+            room.code,
+            index,
+          )?.details || "[]",
+        ),
+      })),
+      ratingNotice:
+        room.ranked &&
+        members.length === 2 &&
+        competitive.pairCount(members[0].id, members[1].id, room.code) >= 5
+          ? "Limite diário com este rival: esta série não altera a classificação."
+          : null,
       public: !!room.public,
       ranked: !!room.ranked,
       ratingResult:
@@ -322,8 +368,8 @@ export function roomRoutes(db, clock) {
         ) || null,
       capacity: room.capacity,
       starts: room.starts,
-      breakStarted:room.break_started,
-      breakUntil:room.break_until,
+      breakStarted: room.break_started,
+      breakUntil: room.break_until,
       ends: room.starts ? endOf(room) : null,
       serverNow: clock(),
       state: state(room),
@@ -336,7 +382,12 @@ export function roomRoutes(db, clock) {
       members,
       nextCode: room.next_code || null,
       nextAction: room.next_code ? room.next_action || "rematch" : null,
-      nextDifficulty: room.next_code ? Math.min(MAX_LEVEL, config.difficulty + (room.next_action === "continue" ? 1 : 0)) : null,
+      nextDifficulty: room.next_code
+        ? Math.min(
+            MAX_LEVEL,
+            config.difficulty + (room.next_action === "continue" ? 1 : 0),
+          )
+        : null,
     };
   };
   const load = (code, uid) => {
@@ -354,7 +405,15 @@ export function roomRoutes(db, clock) {
     return room;
   };
   const join = (room, uid, fromQueue = false) => {
-    if(room.ranked && one("SELECT 1 FROM room_members WHERE room=? AND player=? AND forfeited=1",room.code,uid))fail(409,"Sua participação nesta série foi encerrada.");
+    if (
+      room.ranked &&
+      one(
+        "SELECT 1 FROM room_members WHERE room=? AND player=? AND forfeited=1",
+        room.code,
+        uid,
+      )
+    )
+      fail(409, "Sua participação nesta série foi encerrada.");
     if (
       one(
         "SELECT 1 FROM room_members WHERE room=? AND player=?",
@@ -387,10 +446,20 @@ export function roomRoutes(db, clock) {
         clock() - 16000,
       ).n === 2
     ) {
-      if(room.ranked) {
-        const ratings=all("SELECT player FROM room_members WHERE room=?",room.code).map(m=>competitive.rating(m.player).rating);
-        const config=makeCompetitive(room.mode,competitiveBase(ratings.reduce((a,b)=>a+b,0)/ratings.length));
-        run("UPDATE rooms SET config=? WHERE code=?",JSON.stringify(config),room.code);
+      if (room.ranked) {
+        const ratings = all(
+          "SELECT player FROM room_members WHERE room=?",
+          room.code,
+        ).map((m) => competitive.rating(m.player).rating);
+        const config = makeCompetitive(
+          room.mode,
+          competitiveBase(ratings.reduce((a, b) => a + b, 0) / ratings.length),
+        );
+        run(
+          "UPDATE rooms SET config=? WHERE code=?",
+          JSON.stringify(config),
+          room.code,
+        );
       }
       run("UPDATE rooms SET starts=? WHERE code=?", clock() + 5000, room.code);
       room = load(room.code);
@@ -398,10 +467,12 @@ export function roomRoutes(db, clock) {
     return view(room, uid);
   };
   const create = (uid, body, ranked = false) => {
-    const config = ranked ? makeCompetitive(body.mode,competitiveBase(competitive.rating(uid).rating)) : makeArcade(
-      body.mode,
-      body.difficulty ?? currentLevel(uid, body.mode),
-    );
+    const config = ranked
+      ? makeCompetitive(
+          body.mode,
+          competitiveBase(competitive.rating(uid).rating),
+        )
+      : makeArcade(body.mode, body.difficulty ?? currentLevel(uid, body.mode));
     if (!ROOM_CAPACITIES.includes(body.capacity))
       fail(400, "Escolha um tamanho de sala válido.");
     const format = body.format === "md3" ? "md3" : "md1";
@@ -623,45 +694,84 @@ export function roomRoutes(db, clock) {
       run("UPDATE room_members SET seen=? WHERE room=? AND player=?", clock(), code, uid);
       if (!action && method === "GET")
         return { status: 200, data: view(room, uid) };
-      if(action === "ready" && method === "POST"){
-        if(body.gameIndex!==room.game_index)fail(409,"Este intervalo já terminou. Atualize a sala.");
-        const member=one("SELECT ready,forfeited FROM room_members WHERE room=? AND player=?",code,uid);
-        if(member.forfeited)fail(409,"Sua participação nesta série foi encerrada.");
-        if(state(room)!=="intermission"){
-          if(member.ready && state(room)==="countdown")return {status:200,data:view(room,uid)};
-          fail(409,"Não há intervalo ativo nesta prova.");
+      if (action === "ready" && method === "POST") {
+        if (body.gameIndex !== room.game_index)
+          fail(409, "Este intervalo já terminou. Atualize a sala.");
+        const member = one(
+          "SELECT ready,forfeited FROM room_members WHERE room=? AND player=?",
+          code,
+          uid,
+        );
+        if (member.forfeited)
+          fail(409, "Sua participação nesta série foi encerrada.");
+        if (state(room) !== "intermission") {
+          if (member.ready && state(room) === "countdown")
+            return { status: 200, data: view(room, uid) };
+          fail(409, "Não há intervalo ativo nesta prova.");
         }
-        run("UPDATE room_members SET ready=1,seen=? WHERE room=? AND player=?",clock(),code,uid);
-        if(!one("SELECT 1 FROM room_members WHERE room=? AND forfeited=0 AND ready=0",code)){
-          room.break_until=Math.max(room.break_started+5000,clock());room.starts=room.break_until+5000;
-          run("UPDATE rooms SET break_until=?,starts=? WHERE code=?",room.break_until,room.starts,code);
+        run(
+          "UPDATE room_members SET ready=1,seen=? WHERE room=? AND player=?",
+          clock(),
+          code,
+          uid,
+        );
+        if (
+          !one(
+            "SELECT 1 FROM room_members WHERE room=? AND forfeited=0 AND ready=0",
+            code,
+          )
+        ) {
+          room.break_until = Math.max(room.break_started + 5000, clock());
+          room.starts = room.break_until + 5000;
+          run(
+            "UPDATE rooms SET break_until=?,starts=? WHERE code=?",
+            room.break_until,
+            room.starts,
+            code,
+          );
         }
-        return {status:200,data:view(room,uid)};
+        return { status: 200, data: view(room, uid) };
       }
       if (action === "round" && method === "POST") {
         const result = competitive.round(room, uid, body);
         if (result.done) finalize(load(code, uid));
         return { status: 200, data: result };
       }
-      if ((action === "rematch" || action === "continue") && method === "POST") {
-        if (action === "continue" && room.ranked) fail(409, "Continue pela fila competitiva.");
+      if (
+        (action === "rematch" || action === "continue") &&
+        method === "POST"
+      ) {
+        if (action === "continue" && room.ranked)
+          fail(409, "Continue pela fila competitiva.");
         if (state(room) !== "finished")
           fail(409, "A partida ainda não terminou.");
         // Idempotente: o primeiro clique cria a sala e aponta pra ela
         // (next_code); quem clicar depois — ou aceitar o convite — só entra
         // na mesma sala, em vez de fragmentar o grupo em várias revanches.
         let nextCode = room.next_code;
-        if (nextCode && (room.next_action || "rematch") !== action) fail(409, "Já existe um convite para a próxima partida. Aceite o convite da sala.");
+        if (nextCode && (room.next_action || "rematch") !== action)
+          fail(
+            409,
+            "Já existe um convite para a próxima partida. Aceite o convite da sala.",
+          );
         if (!nextCode) {
           competitive.event(uid, "rematch_created");
           nextCode = create(uid, {
             mode: room.mode,
-            difficulty: Math.min(MAX_LEVEL, configOf(room).difficulty + (action === "continue" ? 1 : 0)),
+            difficulty: Math.min(
+              MAX_LEVEL,
+              configOf(room).difficulty + (action === "continue" ? 1 : 0),
+            ),
             format: room.format || "md1",
             capacity: room.capacity,
             public: room.ranked ? false : !!room.public,
           }).code;
-          run("UPDATE rooms SET next_code=?,next_action=? WHERE code=?", nextCode, action, code);
+          run(
+            "UPDATE rooms SET next_code=?,next_action=? WHERE code=?",
+            nextCode,
+            action,
+            code,
+          );
         }
         return { status: 200, data: join(load(nextCode), uid) };
       }
@@ -700,7 +810,16 @@ export function roomRoutes(db, clock) {
         return { status: 200, data: { left: true } };
       }
       if (method !== "POST") fail(405, "Método inválido.");
-      if(action==="heartbeat" && room.ranked && one("SELECT 1 FROM room_members WHERE room=? AND player=? AND forfeited=1",code,uid))fail(409,"Sua participação nesta série foi encerrada.");
+      if (
+        action === "heartbeat" &&
+        room.ranked &&
+        one(
+          "SELECT 1 FROM room_members WHERE room=? AND player=? AND forfeited=1",
+          code,
+          uid,
+        )
+      )
+        fail(409, "Sua participação nesta série foi encerrada.");
       if (action === "heartbeat" && room.ranked && !room.starts) {
         const match = findCompetitive(uid, room);
         if (match) return { status: 200, data: match };

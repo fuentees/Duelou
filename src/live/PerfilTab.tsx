@@ -108,17 +108,6 @@ export default function PerfilTab({
         avatar={profile.avatar}
         onSaved={onProfileUpdated}
       />
-      <Card>
-        <Text style={s.heading}>Conexão e permissões</Text>
-        <Text style={s.muted}>
-          Internet é necessária para entrar em salas e salvar resultados. A
-          autorização de rede é concedida na instalação.
-        </Text>
-        <Text style={s.muted}>
-          Os jogos da Arena não acessam câmera, microfone, localização ou
-          contatos. Compartilhar abre o menu do seu aparelho.
-        </Text>
-      </Card>
       <View style={s.statRow}>
         <View style={s.statChip}>
           <Text style={s.statValue}>{profile.level}</Text>
@@ -138,18 +127,26 @@ export default function PerfilTab({
         <Text style={s.muted}>
           Opcionais. Renovam na segunda-feira às 00h UTC.
         </Text>
+        {!profile.weekly?.length && <Text style={s.muted}>Seus objetivos aparecerão aqui quando estiverem disponíveis.</Text>}
         {profile.weekly?.map((m) => (
-          <Text key={m.name} style={s.muted}>
+          <View key={m.name} style={{ gap: 6 }}>
+          <Text style={s.muted}>
             {m.current >= m.target ? "✓" : "○"} {m.name} · {m.current}/
             {m.target}
           </Text>
+          <View accessibilityRole="progressbar" accessibilityLabel={m.name}
+            accessibilityValue={{ min: 0, max: Math.max(1, m.target), now: Math.max(0, Math.min(m.current, m.target)) }}
+            style={{ height: 8, backgroundColor: palette.surfaceAlt, borderRadius: 4, overflow: "hidden" }}>
+            <View style={{ height: 8, borderRadius: 4, backgroundColor: palette.violet, width: `${Math.max(0, Math.min(100, m.target > 0 ? m.current / m.target * 100 : 0))}%` }} />
+          </View>
+          </View>
         ))}
         {!!profile.weekly?.length &&
-          profile.weekly.every((m) => m.current === m.target) && (
+          profile.weekly.every((m) => m.current >= m.target) && (
             <Text style={s.accent}>🏅 Rival da semana</Text>
           )}
       </Card>
-      <Text style={s.heading}>Conquistas</Text>
+      <Text style={s.heading}>Conquistas · {profile.achievements.filter((a) => a.unlocked).length}/{profile.achievements.length}</Text>
       <View style={s.achievementGrid}>
         {profile.achievements.map((achievement) =>
           achievement.unlocked ? (

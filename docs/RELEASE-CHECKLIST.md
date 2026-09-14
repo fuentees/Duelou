@@ -6,6 +6,8 @@ Legenda: [x] concluído no repositório; [ ] exige execução, escolha ou conta 
 
 ## Produto
 
+- [x] Apresentação de batalha, prontidão entre provas MD3, destaque do vencedor e personagem cosmético salvo na conta.
+
 - [x] Nove jogos, campanha de 30 fases, seis capítulos, treino livre e metas por modalidade.
 - [x] Campanha com sincronização opcional, desafio diário solo, salas casuais, convites e fila competitiva 1×1 MD3.
 - [x] Reconexão, continuação, revanche e histórico permanente. Pontuação igual é empate.

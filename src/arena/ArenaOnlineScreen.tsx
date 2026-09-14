@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Animated, StyleSheet, Text, View } from "react-native";
+import { Animated, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import useArenaSocket from "./useArenaSocket";
 import MatchmakingScreen from "./MatchmakingScreen";
@@ -15,6 +15,7 @@ import useReducedMotion from "../useReducedMotion";
 import { palette, radius } from "../theme";
 import Button from "../components/Button";
 import LiveStatus from "../components/LiveStatus";
+import Battlefield from "./Battlefield";
 
 // Quanto tempo o "poof" fica visível depois de uma tropa sumir (ver o
 // comentário de EDGE_THRESHOLD abaixo sobre como decidimos "morreu" vs
@@ -143,7 +144,7 @@ export default function ArenaOnlineScreen({ onExit }: { onExit?: () => void }) {
   if (socket.phase === "ended" && state) {
     return (
       <SafeAreaView style={s.screen}>
-        <View style={s.center}>
+        <ScrollView contentContainerStyle={[s.center, { flex: undefined, flexGrow: 1 }]}>
           {socket.opponentLeft && (
             <Text style={s.opponentLeft} accessibilityLiveRegion="polite">
               Seu adversário saiu da partida.
@@ -151,12 +152,15 @@ export default function ArenaOnlineScreen({ onExit }: { onExit?: () => void }) {
           )}
           <ResultCard
             state={state}
+            avatar={socket.me?.avatar}
+            playerName={socket.me?.name}
             comeback={state.winner === "player" && wasCriticalRef.current}
             onRematch={handleExit}
+            rematchLabel="Voltar para jogar"
             onMenu={handleExit}
             onError={() => {}}
           />
-        </View>
+        </ScrollView>
       </SafeAreaView>
     );
   }
@@ -173,6 +177,13 @@ export default function ArenaOnlineScreen({ onExit }: { onExit?: () => void }) {
   return (
     <SafeAreaView style={s.screen}>
       <Animated.View style={[s.match, { transform: [{ translateX: shakeX }] }]}>
+        <View style={s.row}>
+          <Text style={s.caption}>ARENA RUSH · 1 × 1</Text>
+          <Text accessibilityLabel={`Tempo restante: ${Math.ceil(state.timeRemaining)} segundos`}
+            style={{ fontSize: 20, fontWeight: "900", color: state.timeRemaining <= 15 ? palette.red : palette.text, fontVariant: ["tabular-nums"] }}>
+            {Math.floor(Math.max(0, Math.ceil(state.timeRemaining)) / 60)}:{String(Math.max(0, Math.ceil(state.timeRemaining)) % 60).padStart(2, "0")}
+          </Text>
+        </View>
         {socket.phase === "reconnecting" && (
           <View style={s.reconnectingBanner} accessibilityLiveRegion="polite">
             <LiveStatus mode="inline" state="reconnecting" />
@@ -187,6 +198,7 @@ export default function ArenaOnlineScreen({ onExit }: { onExit?: () => void }) {
           danger={state.enemyBaseHp < DANGER_THRESHOLD}
         />
         <View style={s.lane} onLayout={(e) => setLaneHeight(e.nativeEvent.layout.height)}>
+          <Battlefield />
           {frontLine !== null && (
             <View
               accessibilityElementsHidden
@@ -252,10 +264,10 @@ export default function ArenaOnlineScreen({ onExit }: { onExit?: () => void }) {
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: palette.bg },
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 16, padding: 24 },
-  match: { flex: 1, padding: 16, gap: 10 },
+  match: { flex: 1, padding: 12, gap: 8, width: "100%", maxWidth: 660, alignSelf: "center" },
   row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  opponentNameRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  caption: { fontSize: 12, fontWeight: "700", color: palette.textFaint },
+  opponentNameRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", flex: 1, minWidth: 0, gap: 8 },
+  caption: { fontSize: 12, fontWeight: "700", color: palette.textFaint, flexShrink: 1 },
   combo: { fontSize: 13, fontWeight: "900", color: palette.amber },
   opponentLeft: { fontSize: 13, fontWeight: "700", color: palette.textDim, textAlign: "center" },
   reconnectingBanner: {

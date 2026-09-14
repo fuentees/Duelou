@@ -21,14 +21,15 @@ export default function HealthBar({
   return (
     <View style={s.healthBlock} accessibilityLabel={`${label}: ${Math.round(hp)} de 100`}>
       <View style={s.row}>
-        <Text style={s.caption}>{label}</Text>
+        <Text style={s.caption}>{label} · {Math.max(0, Math.round(hp))}/100</Text>
         {danger && (
           <Text style={s.danger} accessibilityLiveRegion="polite">
             ⚠ CRÍTICO
           </Text>
         )}
       </View>
-      <View style={s.healthTrack}>
+      <View style={s.healthTrack} accessibilityRole="progressbar" accessibilityLabel={label}
+        accessibilityValue={{ min: 0, max: 100, now: Math.max(0, Math.min(100, hp)) }}>
         <View
           style={[
             s.healthFill,

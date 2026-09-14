@@ -70,6 +70,7 @@ export function persistence(db, clock) {
     results,
     index = room.game_index,
     legacy = false,
+    winner = undefined,
   ) => {
     const high = Math.max(0, ...results.map((r) => r.score || 0));
     const leaders = results.filter((r) => r.score === high);
@@ -91,7 +92,9 @@ export function persistence(db, clock) {
           r.player,
           room.code,
           index,
-          index === 0 ? Math.max(0, room.starts - (r.joined || room.created) - 5000) : null,
+          index === 0
+            ? Math.max(0, room.starts - (r.joined || room.created) - 5000)
+            : null,
           progress.opened
             ? Math.max(
                 0,
@@ -112,13 +115,17 @@ export function persistence(db, clock) {
       const outcome =
         high === 0
           ? "void"
-          : leaders.length > 1
-            ? r.score === high
-              ? "draw"
-              : "loss"
-            : r.score === high
+          : winner !== undefined && winner !== null
+            ? winner === r.player
               ? "win"
-              : "loss";
+              : "loss"
+            : leaders.length > 1
+              ? r.score === high
+                ? "draw"
+                : "loss"
+              : r.score === high
+                ? "win"
+                : "loss";
       const details = legacy
         ? [
             "Resultado recuperado de uma sala anterior. Detalhes da prova indisponíveis.",
@@ -161,6 +168,7 @@ export function persistence(db, clock) {
             .map((m) => ({ ...m, score: h.scores[m.player] })),
           index,
           index !== room.game_index,
+          h.winner ?? null,
         ),
       );
       if (room.counted && !history.length) archive(room, config, members);

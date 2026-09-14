@@ -62,6 +62,11 @@ async function checkLayout(label) {
   assert.deepEqual(violations, [], label);
 }
 try {
+  const user = await (await fetch(base + "/v1/guests", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "Acessibilidade" }),
+  })).json();
+  await page.addInitScript(token => sessionStorage.setItem("duelou.session.v1", token), user.token);
   await page.goto("http://localhost:8083");
   await page.getByRole("button", { name: "Arena", exact: true }).click();
   await page

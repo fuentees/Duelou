@@ -44,6 +44,7 @@ async function enterArenaRush(page) {
   await page
     .getByRole("button", { name: "Duelo ao vivo · Arena Rush (Beta)", exact: true })
     .click();
+  await page.getByRole("button", { name: "Buscar adversário", exact: true }).click();
 }
 
 // Responde o que estiver na tela (múltipla escolha ou reflexo) por um

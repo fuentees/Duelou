@@ -8,8 +8,12 @@ import AppHeader from "./components/AppHeader";
 import BottomNav, { Section } from "./components/BottomNav";
 import Button from "./components/Button";
 import Card from "./components/Card";
+import { LinearGradient } from "expo-linear-gradient";
+import { gradients } from "./theme";
+import Character from "./components/Character";
 
 type Player = {
+  avatar?: unknown;
   id: string;
   name: string;
   level: number;
@@ -32,6 +36,8 @@ export default function HomeScreen({
   const [error, setError] = useState("");
   useEffect(() => {
     let active = true;
+    setStats(null);
+    setError("");
     if (player)
       api<Summary>("/v1/rooms/stats")
         .then((s) => {
@@ -56,18 +62,25 @@ export default function HomeScreen({
               : "Seu próximo duelo começa aqui."}
           </Text>
         </View>
-        <View style={s.hero}>
+        <LinearGradient colors={gradients.hero} style={s.hero}>
+          <Character avatar={player?.avatar} size={72} />
           <Text style={s.heroLabel}>DUELOU / ARENA</Text>
           <Text style={s.heroTitle}>Qual vai ser o{"\n"}jogo de hoje?</Text>
-          <Text style={s.body}>
+          <Text style={[s.body, { color: "#F0EDFF" }]}>
             {modes.length} jogos. Partidas solo e disputas com a turma.
           </Text>
           <Button onPress={() => onNavigate("arcade")}>Jogar</Button>
-        </View>
+        </LinearGradient>
+        <Card active>
+          <Text style={s.kicker}>ARENA RUSH · 1 × 1</Text>
+          <Text style={s.heading}>Seu raciocínio vira um exército.</Text>
+          <Text style={s.body}>Invocações, combos e uma base para defender. Conheça as regras e encontre seu rival.</Text>
+          <Button onPress={() => onNavigate("arenaRush")}>Conhecer Arena Rush</Button>
+        </Card>
         <Text style={s.heading}>Seu resumo</Text>
         <View style={s.stats}>
           <View style={s.stat}>
-            <Text style={s.value}>{player ? (stats?.played ?? 0) : "—"}</Text>
+            <Text style={s.value}>{stats?.played ?? "—"}</Text>
             <Text style={s.label}>Partidas</Text>
           </View>
           <View style={s.stat}>
