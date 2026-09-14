@@ -68,3 +68,91 @@ test("ordem FIFO é respeitada com três chegadas: quem chegou primeiro empareia
   const result = queue.join("dave");
   assert.equal(result.opponent, "carol", "carol chegou antes de dave nessa nova fila");
 });
+
+// --- Pareamento por nota (antes era FIFO puro: 1400 contra 800 dava na mesma)
+
+function fakeClock(start = 0) {
+  let t = start;
+  return { now: () => t, advance: (ms) => (t += ms) };
+}
+
+test("quem acabou de entrar não encara alguém de nota muito distante", () => {
+  const clock = fakeClock();
+  const queue = createArenaQueue({ now: clock.now });
+  queue.join("veterano", 1600);
+  const novato = queue.join("novato", 900);
+  assert.equal(novato.paired, false, "700 pontos de diferença não é partida, é atropelo");
+  assert.equal(queue.size(), 2);
+});
+
+test("entre vários esperando, pareia com a nota mais próxima", () => {
+  const clock = fakeClock();
+  const queue = createArenaQueue({ now: clock.now });
+  queue.join("longe", 1400);
+  queue.join("perto", 1040);
+  const entrando = queue.join("entrando", 1000);
+  assert.equal(entrando.paired, true);
+  assert.equal(entrando.opponent, "perto");
+  assert.equal(queue.size(), 1, "quem sobrou continua esperando");
+});
+
+test("a janela abre com o tempo de espera: fila eterna é pior que partida desigual", () => {
+  const clock = fakeClock();
+  const queue = createArenaQueue({ now: clock.now });
+  queue.join("veterano", 1600);
+  assert.equal(queue.join("novato", 900).paired, false);
+  queue.leave("novato");
+
+  clock.advance(20_000); // o veterano está esperando há 20 segundos
+  const depois = queue.join("novato", 900);
+  assert.equal(depois.paired, true, "depois de esperar, aceita qualquer adversário");
+  assert.equal(depois.opponent, "veterano");
+});
+
+test("sweep() junta quem já estava esperando quando as janelas abrem", () => {
+  const clock = fakeClock();
+  const queue = createArenaQueue({ now: clock.now });
+  queue.join("a", 1500);
+  queue.join("b", 800);
+  assert.deepEqual(queue.sweep(), [], "no começo as janelas ainda não se alcançam");
+
+  clock.advance(15_000);
+  const pairs = queue.sweep();
+  assert.equal(pairs.length, 1);
+  assert.deepEqual(pairs[0].sort(), ["a", "b"]);
+  assert.equal(queue.size(), 0, "quem foi pareado sai da fila");
+  assert.deepEqual(queue.sweep(), []);
+});
+
+test("sweep() com número ímpar de gente deixa o último esperando, sem repetir ninguém", () => {
+  const clock = fakeClock();
+  const queue = createArenaQueue({ now: clock.now });
+  // Notas distantes o bastante pra ninguém emparelhar na entrada — é o sweep
+  // que decide, depois que as janelas abrem.
+  queue.join("a", 800);
+  queue.join("b", 1500);
+  queue.join("c", 2200);
+  assert.equal(queue.size(), 3);
+  clock.advance(15_000);
+  const pairs = queue.sweep();
+  assert.equal(pairs.length, 1);
+  assert.equal(queue.size(), 1);
+  const emparelhados = pairs.flat();
+  assert.equal(new Set(emparelhados).size, 2, "ninguém pode aparecer em dois pares");
+});
+
+test("reentrar na fila atualiza a nota sem reiniciar o tempo de espera", () => {
+  const clock = fakeClock();
+  const queue = createArenaQueue({ now: clock.now });
+  queue.join("alice", 1000);
+  clock.advance(10_000);
+  queue.join("alice", 1500);
+  assert.equal(queue.size(), 1);
+  assert.equal(queue.waitingSince("alice"), 10_000, "o relógio de espera não pode reiniciar");
+});
+
+test("nota inválida não quebra o pareamento", () => {
+  const queue = createArenaQueue();
+  queue.join("alice", undefined);
+  assert.equal(queue.join("bob", NaN).paired, true, "sem nota, trata como jogador médio");
+});

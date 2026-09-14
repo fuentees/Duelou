@@ -8,6 +8,11 @@ import SkillRound from "./SkillRound";
 import Pressy from "../components/Pressy";
 import { s } from "./styles";
 
+// Quanto tempo a rodada fica parada mostrando o veredito. Errar merece mais:
+// é quando a pessoa precisa ver qual era a certa e por quê.
+const RIGHT_HOLD_MS = 450;
+const WRONG_HOLD_MS = 1500;
+
 function ChoiceRound({
   config,
   seconds,
@@ -27,7 +32,13 @@ function ChoiceRound({
     // sem isso, o bônus de sequência da pontuação era invisível durante o jogo.
     [streak, setStreak] = useState(0);
   const [feedback, setFeedback] = useState("");
+  // Enquanto o veredito da rodada está na tela: qual opção foi tocada e qual
+  // era a certa. Só existe no solo/treino — nas salas online o servidor não
+  // manda o gabarito (senão dava pra ler a resposta pelo dev tools), então lá
+  // a rodada continua trocando na hora, como sempre foi.
+  const [reveal, setReveal] = useState<{ picked: number; correct: number } | null>(null);
   const [gridWidth, setGridWidth] = useState(0);
+  const revealTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tapping = useRef(false);
   const values = useRef<number[]>([]),
     done = useRef(false),
@@ -54,6 +65,7 @@ function ChoiceRound({
     return () => {
       clearInterval(id);
       sub.remove();
+      if (revealTimer.current) clearTimeout(revealTimer.current);
     };
   }, []);
   useEffect(() => {
@@ -120,11 +132,6 @@ function ChoiceRound({
           ]}
         />
       </View>
-      {!!feedback && (
-        <Text accessibilityLiveRegion="polite" style={s.caption}>
-          {feedback}
-        </Text>
-      )}
       <Text
         accessibilityLabel={
           current.promptColor
@@ -157,36 +164,54 @@ function ChoiceRound({
               key={index}
               accessibilityLabel={`Opção ${index + 1}: ${value}`}
               onPress={() => {
-                if (done.current || tapping.current) return;
+                if (done.current || tapping.current || reveal) return;
                 tapping.current = true;
-                if (typeof current.answer === "number") {
-                  const nextStreak = index === current.answer ? streak + 1 : 0;
-                  setStreak(nextStreak);
-                  setFeedback(
-                    index === current.answer
-                      ? "Acertou!"
-                      : "Resposta: " +
-                          current.options[current.answer] +
-                          ". " +
-                          (current.explanation || ""),
-                  );
-                  if (nextStreak >= 2 && !reducedMotion) {
-                    comboPop.setValue(1.25);
-                    Animated.spring(comboPop, {
-                      toValue: 1,
-                      friction: 4,
-                      useNativeDriver: true,
-                    }).start();
-                  }
-                }
                 const next = [...values.current, index];
                 values.current = next;
-                setAnswers(next);
-                if (next.length === total) finish();
+                const advance = () => {
+                  setReveal(null);
+                  setFeedback("");
+                  setAnswers(next);
+                  if (next.length === total) finish();
+                };
+                if (typeof current.answer !== "number") return advance();
+
+                const right = index === current.answer;
+                const nextStreak = right ? streak + 1 : 0;
+                setStreak(nextStreak);
+                setFeedback(
+                  right
+                    ? "Acertou!"
+                    : `A resposta era ${current.options[current.answer]}.` +
+                      (current.explanation ? " " + current.explanation : ""),
+                );
+                if (nextStreak >= 2 && !reducedMotion) {
+                  comboPop.setValue(1.25);
+                  Animated.spring(comboPop, {
+                    toValue: 1,
+                    friction: 4,
+                    useNativeDriver: true,
+                  }).start();
+                }
+                // Segura a rodada um instante mostrando qual era a certa —
+                // antes, a próxima pergunta entrava no mesmo toque e o aviso
+                // que sobrava na tela já falava da rodada anterior. Errar sem
+                // ver o certo não ensina nada.
+                setReveal({ picked: index, correct: current.answer });
+                const hold = right ? RIGHT_HOLD_MS : WRONG_HOLD_MS;
+                // O relógio não corre durante o veredito: o tempo é da prova,
+                // não da explicação — senão quem erra perde duas vezes.
+                deadline.current += hold;
+                setRemaining(Math.max(0, Math.ceil((deadline.current - Date.now()) / 1000)));
+                revealTimer.current = setTimeout(advance, hold);
               }}
               outerStyle={[
                 s.option,
                 swatch ? { backgroundColor: swatch } : null,
+                reveal && index === reveal.correct ? s.optionRight : null,
+                reveal && index === reveal.picked && index !== reveal.correct
+                  ? s.optionWrong
+                  : null,
                 config.mode === "odd" && {
                   width: gridWidth
                     ? (gridWidth -
@@ -210,27 +235,61 @@ function ChoiceRound({
               ]}
             >
               {config.mode === "odd" ? (
-                <PatternPiece value={String(value)} />
+                <View>
+                  <PatternPiece value={String(value)} />
+                  {reveal && (index === reveal.correct || index === reveal.picked) && (
+                    <Text style={s.markOverPiece}>
+                      {index === reveal.correct ? "✓" : "✗"}
+                    </Text>
+                  )}
+                </View>
               ) : (
-                <Text
-                  style={[
-                    s.optionText,
-                    big && { fontSize: 20 },
-                    swatch && String(value).length > 5 && { fontSize: 22 },
-                    swatch ? { color: contrastText(swatch) } : null,
-                  ]}
-                >
-                  {value}
-                </Text>
+                <View style={s.optionRow}>
+                  {/* Símbolo junto do número, não por cima: com "27" e o ✗ no
+                      canto, um caía em cima do outro. Em linha, o veredito é
+                      legível e não depende só da cor da borda. */}
+                  {reveal && (index === reveal.correct || index === reveal.picked) && (
+                    <Text
+                      style={[
+                        s.mark,
+                        { color: index === reveal.correct ? palette.green : palette.red },
+                      ]}
+                    >
+                      {index === reveal.correct ? "✓" : "✗"}
+                    </Text>
+                  )}
+                  <Text
+                    style={[
+                      s.optionText,
+                      big && { fontSize: 20 },
+                      swatch && String(value).length > 5 && { fontSize: 22 },
+                      swatch ? { color: contrastText(swatch) } : null,
+                    ]}
+                  >
+                    {value}
+                  </Text>
+                </View>
               )}
             </Pressy>
           );
         })}
       </View>
-      <Text style={s.caption}>
-        Uma resposta por rodada. Acertos seguidos aumentam o combo, até 1.000
-        pontos.
-      </Text>
+      {feedback ? (
+        <Text
+          accessibilityLiveRegion="polite"
+          style={[
+            s.verdict,
+            { color: reveal && reveal.picked === reveal.correct ? palette.green : palette.red },
+          ]}
+        >
+          {feedback}
+        </Text>
+      ) : (
+        <Text style={s.caption}>
+          Uma resposta por rodada. Acertos seguidos aumentam o combo, até 1.000
+          pontos.
+        </Text>
+      )}
     </View>
   );
 }

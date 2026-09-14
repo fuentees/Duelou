@@ -7,6 +7,10 @@ import Button from "./components/Button";
 import Card from "./components/Card";
 import { modes } from "../shared/arcade.mjs";
 import { palette } from "./theme";
+
+// O menu tinha "Duelo ao vivo", "Todos os jogos" e "Ranking da Arena" — os
+// três a um toque na barra de baixo, que agora tem cinco destinos. Ficou o
+// que não está na barra: perfil, configurações e a ajuda.
 export default function MenuScreen({
   onNavigate,
 }: {
@@ -19,68 +23,84 @@ export default function MenuScreen({
       <ScrollView contentContainerStyle={s.content}>
         <Text style={s.title}>Menu</Text>
         <Text style={s.body}>
-          Seu jogador, suas partidas e tudo sobre o Duelou.
+          Seu jogador, suas preferências e as regras do jogo.
         </Text>
-        <Button onPress={() => onNavigate("arenaRush")}>
-          Duelo ao vivo · Arena Rush (Beta)
-        </Button>
-        <Button secondary onPress={() => onNavigate("profile")}>
+        <Button onPress={() => onNavigate("profile")}>
           Meu perfil e conquistas
         </Button>
-        <Button secondary onPress={() => onNavigate("arcade")}>
-          Todos os jogos
-        </Button>
-        <Button secondary onPress={() => onNavigate("ranking")}>
-          Ranking da Arena
-        </Button>
         <Button secondary onPress={() => onNavigate("audio")}>
-          Som e música
+          Configurações
         </Button>
         <Button secondary onPress={() => setHelp(!help)}>
           {help ? "Fechar ajuda" : "Como jogar"}
         </Button>
         {help && (
-          <Card>
-            <Text style={s.heading}>Sempre o mesmo caminho</Text>
-            <Text style={s.body}>
-              Campanha: avance sozinho em seis capítulos e ganhe estrelas.
-              Treino livre: qualquer nível sem alterar progresso. Multijogador:
-              salas casuais com amigos. Jogar competitivo: fila única 1 × 1 com
-              melhor de três e classificação por habilidade.
-            </Text>
-            <Text style={s.heading}>Pontos e avaliações</Text>
-            <Text style={s.body}>
-              Todas as provas valem até 1.000 pontos. Bom: 500+. Ótimo: 700+.
-              Excelente: 850+. Profissional: 950+. A avaliação descreve sua
-              tentativa, não é uma patente.
-            </Text>
-            <Text style={s.heading}>Progresso</Text>
-            <Text style={s.body}>
-              Na campanha, consulte a meta de estrelas de cada fase; reflexo e
-              memória têm metas próprias. O progresso fica no aparelho, com
-              sincronização opcional na conta. XP e conquistas da
-              conta vêm das partidas online. A patente só muda na fila
-              competitiva; empates não usam velocidade da conexão. Salas e
-              revanches entre amigos são casuais.
-            </Text>
-            <Text style={s.heading}>Tempo certo</Text>
-            <Text style={s.body}>
-              Cada partida sorteia um alvo entre 2 e 12 segundos. Todos na sala
-              recebem o mesmo alvo. Você vê seu tempo e a diferença no
-              resultado.
-            </Text>
-            <Text style={s.heading}>Mira certeira</Text>
-            <Text style={s.body}>
-              Os alvos vão aparecendo e sumindo sozinhos — em geral um de cada
-              vez, às vezes dois juntos. Toque neles antes que sumam: o
-              resultado é quantos você conseguiu pegar no total, não quão rápido
-              você reagiu. Níveis altos trazem alvos mais rápidos e com menos
-              tempo na tela.
-            </Text>
-          </Card>
+          <>
+            <Card>
+              <Text style={s.heading}>Os quatro caminhos</Text>
+              <Text style={s.body}>
+                <Text style={s.term}>Campanha:</Text> 30 fases por jogo, em seis
+                capítulos, cada uma destravando a próxima. Fica neste aparelho.
+              </Text>
+              <Text style={s.body}>
+                <Text style={s.term}>Treino livre:</Text> qualquer nível, quantas
+                vezes quiser, sem alterar nada.
+              </Text>
+              <Text style={s.body}>
+                <Text style={s.term}>Salas:</Text> a mesma prova para todo mundo
+                da sala, para jogar com a turma. Não mexe em classificação.
+              </Text>
+              <Text style={s.body}>
+                <Text style={s.term}>Competitivo:</Text> fila 1 × 1, melhor de
+                três, com patente por habilidade. E o{" "}
+                <Text style={s.term}>Duelo (Arena Rush)</Text>, que é o 1 × 1 ao
+                vivo, com nota e divisão próprias.
+              </Text>
+            </Card>
+
+            <Card>
+              <Text style={s.heading}>Como cada jogo funciona</Text>
+              {modes.map((mode) => (
+                <Text key={mode.id} style={s.body}>
+                  <Text style={s.term}>{mode.name}:</Text> {mode.description}
+                </Text>
+              ))}
+              <Text style={s.note}>
+                Antes de cada fase nova da campanha você vê um exemplo sem
+                cronômetro. Ao errar uma rodada, o jogo mostra qual era a
+                resposta certa antes de seguir.
+              </Text>
+            </Card>
+
+            <Card>
+              <Text style={s.heading}>Pontos e estrelas</Text>
+              <Text style={s.body}>
+                Toda prova vale até 1.000 pontos, e acertos seguidos valem mais
+                que acertos espalhados. Bom: 500+. Ótimo: 700+. Excelente: 850+.
+                Profissional: 950+.
+              </Text>
+              <Text style={s.body}>
+                Na campanha, cada fase dá até três estrelas: concluir, alcançar a
+                meta que libera a próxima fase e alcançar a excelência. São 90
+                estrelas por jogo.
+              </Text>
+            </Card>
+
+            <Card>
+              <Text style={s.heading}>O que conta onde</Text>
+              <Text style={s.body}>
+                A patente competitiva só muda na fila competitiva. A nota da
+                Arena Rush só muda no duelo ao vivo — e amistoso por convite não
+                mexe nela. XP e conquistas vêm das partidas online. Campanha e
+                estrelas ficam no aparelho, com sincronização opcional.
+              </Text>
+            </Card>
+          </>
         )}
         <View style={s.footer}>
-          <Text style={s.body}>Duelou · {modes.length} jogos, uma Arena.</Text>
+          <Text style={s.note}>
+            Duelou · {modes.length} jogos, uma Arena e um duelo ao vivo.
+          </Text>
         </View>
       </ScrollView>
       <BottomNav section="menu" onChange={onNavigate} />
@@ -98,6 +118,8 @@ const s = StyleSheet.create({
   },
   title: { fontSize: 32, fontWeight: "800", color: palette.text },
   heading: { fontSize: 18, fontWeight: "800", color: palette.text },
+  term: { fontWeight: "800", color: palette.text },
   body: { fontSize: 14, lineHeight: 23, color: palette.textDim },
+  note: { fontSize: 13, lineHeight: 20, color: palette.textFaint },
   footer: { marginTop: 16 },
 });

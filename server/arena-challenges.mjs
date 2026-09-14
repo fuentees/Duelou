@@ -18,18 +18,13 @@
 
 import { makeArcade, MAX_LEVEL } from "../shared/arcade.mjs";
 import { makeSkillGame } from "../shared/skillGames.mjs";
+import { kindAt, seedFrom, seededRandom } from "../shared/arena/deck.ts";
 
-const CHOICE_MODES = ["math", "colors"];
+// Mais variedade que os dois jogos de escolha originais (math/colors):
+// "order" e "sequence" já geram rodada de alternativa pronta em
+// shared/arcade.mjs e cabem no mesmo painel, sem nenhuma regra nova.
+const CHOICE_MODES = ["math", "colors", "order", "sequence"];
 const KINDS = [...CHOICE_MODES, "reflex"];
-
-// Mesma progressão de shared/arcade.ts (Ticket 2): a cada N desafios
-// respondidos sobe 1 nível.
-const DIFFICULTY_PER_LEVEL = 3;
-
-function levelFor(difficulty) {
-  const level = 1 + Math.floor(Math.max(0, difficulty) / DIFFICULTY_PER_LEVEL);
-  return Math.min(MAX_LEVEL, Math.max(1, level));
-}
 
 function buildChoice(mode, level, random) {
   const round = makeArcade(mode, level, random).rounds[0];
@@ -45,8 +40,9 @@ function buildChoice(mode, level, random) {
 
 /**
  * Fábrica dos desafios da Arena Rush online. Uma instância cobre todos os
- * jogadores/partidas ativos (não é por partida) — por isso o "não repetir o
- * mesmo tipo duas vezes seguidas" é rastreado por jogador, não global.
+ * jogadores/partidas ativos (não é por partida) — o que separa uma partida
+ * da outra é a semente derivada do matchId em cada issue(), não estado
+ * guardado aqui dentro.
  */
 export function createArenaChallenges({
   now = Date.now,
@@ -55,33 +51,39 @@ export function createArenaChallenges({
   clearTimeoutFn = clearTimeout,
 } = {}) {
   const pending = new Map(); // challengeId -> entry
-  const lastKindByPlayer = new Map();
   let nextId = 1;
 
-  function pickKind(playerId) {
-    const last = lastKindByPlayer.get(playerId) ?? null;
-    const choices = KINDS.filter((k) => k !== last);
-    const kind = choices[Math.floor(random() * choices.length)];
-    lastKindByPlayer.set(playerId, kind);
-    return kind;
-  }
-
   /**
-   * Gera e registra um novo desafio pro jogador. Devolve `{challengeId,
-   * public}` — `public` é seguro de mandar pro cliente (sem gabarito, sem
-   * waitMs do reflexo). `onGo(challengeId)`, se passado, é chamado no
-   * momento exato (medido pelo relógio injetado) em que um desafio de
-   * reflexo vira "vai" — quem estiver ligando isso a um socket usa esse
-   * gancho pra avisar o cliente em tempo real.
+   * Gera e registra o desafio da posição `index` do baralho da partida
+   * `matchId`, no nível `level`. Devolve `{challengeId, public}` — `public` é
+   * seguro de mandar pro cliente (sem gabarito, sem waitMs do reflexo).
+   *
+   * O conteúdo vem sempre de uma semente derivada de (matchId, index, level),
+   * nunca do `random` global: os dois lados da mesma partida, no mesmo índice
+   * e no mesmo nível, recebem exatamente o mesmo desafio (ver
+   * shared/arena/deck.ts). `random` continua injetável e só é usado quando
+   * não há partida (`matchId` vazio), em teste.
+   *
+   * `onGo(challengeId)`, se passado, é chamado no momento exato (medido pelo
+   * relógio injetado) em que um desafio de reflexo vira "vai" — quem estiver
+   * ligando isso a um socket usa esse gancho pra avisar o cliente em tempo
+   * real.
    */
-  function issue(playerId, difficulty, onGo) {
-    const level = levelFor(difficulty);
-    const kind = pickKind(playerId);
+  function issue({ matchId = "", index = 0, level = 1 }, onGo) {
+    const safeLevel = Number.isFinite(level)
+      ? Math.min(MAX_LEVEL, Math.max(1, Math.round(level)))
+      : 1;
+    const kind = matchId
+      ? kindAt(KINDS, matchId, index)
+      : KINDS[Math.floor(random() * KINDS.length)];
+    const draw = matchId
+      ? seededRandom(seedFrom(matchId, index, safeLevel))
+      : random;
     const challengeId = String(nextId++);
     const issuedAt = now();
 
     if (kind === "reflex") {
-      const round = makeSkillGame("reflex", level, random).rounds[0];
+      const round = makeSkillGame("reflex", safeLevel, draw).rounds[0];
       const entry = { kind: "reflex", issuedAt, goAt: null, timer: null };
       pending.set(challengeId, entry);
       entry.timer = setTimeoutFn(() => {
@@ -91,7 +93,7 @@ export function createArenaChallenges({
       return { challengeId, public: { kind: "reflex" } };
     }
 
-    const built = buildChoice(kind, level, random);
+    const built = buildChoice(kind, safeLevel, draw);
     pending.set(challengeId, {
       kind: "choice",
       issuedAt,
@@ -148,15 +150,10 @@ export function createArenaChallenges({
     if (entry.timer) clearTimeoutFn(entry.timer);
   }
 
-  function forgetPlayer(playerId) {
-    lastKindByPlayer.delete(playerId);
-  }
-
   function stop() {
     for (const entry of pending.values()) if (entry.timer) clearTimeoutFn(entry.timer);
     pending.clear();
-    lastKindByPlayer.clear();
   }
 
-  return { issue, submit, discard, forgetPlayer, stop };
+  return { issue, submit, discard, stop };
 }

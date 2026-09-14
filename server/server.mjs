@@ -5,6 +5,8 @@ import { persistence } from "./persistence.mjs";
 import http from "node:http";
 import { roomRoutes } from "./rooms.mjs";
 import { attachArenaRealtime } from "./arena-ws.mjs";
+import { createArenaPersistence } from "./arena-persistence.mjs";
+import { createArenaRating } from "./arena-rating.mjs";
 import { DatabaseSync } from "node:sqlite";
 import { randomBytes, randomUUID, createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
@@ -58,6 +60,13 @@ export function createApp(
     "CREATE UNIQUE INDEX IF NOT EXISTS players_recovery ON players(recovery) WHERE recovery IS NOT NULL",
   );
   db.exec("PRAGMA user_version=3");
+  // As duas tabelas do PvP da Arena Rush são criadas por estes construtores
+  // (idempotentes). O de histórico é instanciado aqui só pra garantir que
+  // arena_matches exista antes de qualquer consulta HTTP: quem grava nela é
+  // o motor em tempo real (server/arena-ws.mjs), que pode nem ter subido
+  // ainda — ou nunca subir, em teste de API.
+  createArenaPersistence(db, clock);
+  const arenaRating = createArenaRating(db, clock);
   const get = (sql, ...v) => db.prepare(sql).get(...v);
   const all = (sql, ...v) => db.prepare(sql).all(...v);
   const run = (sql, ...v) => db.prepare(sql).run(...v);
@@ -376,6 +385,15 @@ export function createApp(
           })),
         );
       }
+      // Arena Rush: ficha, classificação e histórico do PvP. Tabelas
+      // próprias (arena_ratings/arena_matches), sem nenhuma relação com a
+      // classificação competitiva — ver server/arena-rating.mjs.
+      if (route === "/v1/arena/me" && req.method === "GET")
+        return send(200, arenaRating.statsFor(uid));
+      if (route === "/v1/arena/leaderboard" && req.method === "GET")
+        return send(200, arenaRating.leaderboard(20));
+      if (route === "/v1/arena/history" && req.method === "GET")
+        return send(200, arenaRating.historyFor(uid, 20));
       if (route === "/v1/me" && req.method === "DELETE") {
         run("DELETE FROM players WHERE id=?", uid);
         return send(200, { deleted: true });

@@ -2,9 +2,10 @@ import CharacterEditor from "../components/CharacterEditor";
 import Character from "../components/Character";
 import React, { useEffect, useRef, useState } from "react";
 import { captureSession } from "../api";
-import { Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { gradients, palette, shadow } from "../theme";
+import { api } from "../api";
+import { arenaTierFor, gradients, palette, shadow } from "../theme";
 import { modes } from "../../shared/arcade.mjs";
 import Button from "../components/Button";
 import Card from "../components/Card";
@@ -51,6 +52,36 @@ export default function PerfilTab({
   onProfileUpdated: (profile: any) => void;
   onDeleteAccount: () => void;
 }) {
+  // O editor de personagem é ferramenta, não informação: ficava sempre
+  // aberto no topo e empurrava o resto do perfil pra baixo. Agora abre quando
+  // a pessoa quer editar — o personagem em si continua visível no cabeçalho.
+  const [editing, setEditing] = useState(false);
+  // Cartel da Arena Rush. O perfil é a página de identidade do jogador e era
+  // a única que não dizia nada sobre o modo principal do app.
+  const [arena, setArena] = useState<{
+    rating: number;
+    matches: number;
+    wins: number;
+    losses: number;
+    draws: number;
+    streak: number;
+    bestCombo: number;
+    placement: boolean;
+    placementRemaining: number;
+  } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    api("/v1/arena/me")
+      .then((data) => {
+        if (alive) setArena(data);
+      })
+      .catch(() => {
+        // Sem ficha, o perfil continua inteiro — só não mostra o cartel.
+      });
+    return () => {
+      alive = false;
+    };
+  }, [profile.id]);
   const [older, setOlder] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [historyError, setHistoryError] = useState("");
@@ -102,12 +133,57 @@ export default function PerfilTab({
             : "Sem classificação competitiva"}
         </Text>
       </LinearGradient>
-      <CharacterEditor
-        key={profile.id}
-        uid={profile.id}
-        avatar={profile.avatar}
-        onSaved={onProfileUpdated}
-      />
+      {editing ? (
+        <>
+          <CharacterEditor
+            key={profile.id}
+            uid={profile.id}
+            avatar={profile.avatar}
+            onSaved={(updated: any) => {
+              onProfileUpdated(updated);
+              setEditing(false);
+            }}
+          />
+          <Button secondary onPress={() => setEditing(false)}>
+            Fechar editor
+          </Button>
+        </>
+      ) : (
+        <Button secondary onPress={() => setEditing(true)}>
+          Personalizar personagem
+        </Button>
+      )}
+      {arena && (
+        <Card>
+          <View style={s.between}>
+            <Text style={s.heading}>Arena Rush</Text>
+            {/* Divisão só depois de duelar: quem nunca jogou apareceria em
+                "Prata" só por causa da nota inicial, o que não significa nada. */}
+            {arena.matches > 0 && (
+              <Text style={s.accent}>
+                {arenaTierFor(arena.rating).icon} {arenaTierFor(arena.rating).name}
+              </Text>
+            )}
+          </View>
+          {arena.matches === 0 ? (
+            <Text style={s.muted}>
+              Você ainda não duelou. O duelo 1 × 1 ao vivo fica na aba Duelo.
+            </Text>
+          ) : (
+            <>
+              <Text style={s.muted}>
+                {arena.rating} pontos · {arena.wins}V {arena.losses}D {arena.draws}E
+                {arena.placement
+                  ? ` · faltam ${arena.placementRemaining} para entrar na tabela`
+                  : arena.streak > 1
+                    ? ` · ${arena.streak} vitórias seguidas`
+                    : ""}
+              </Text>
+              <Text style={s.muted}>Maior combo em duelo: x{arena.bestCombo}</Text>
+            </>
+          )}
+        </Card>
+      )}
       <View style={s.statRow}>
         <View style={s.statChip}>
           <Text style={s.statValue}>{profile.level}</Text>
@@ -212,26 +288,43 @@ export default function PerfilTab({
             : "Carregar histórico anterior"}
         </Button>
       )}
-      <Text style={s.muted}>
-        Moedas ainda não têm loja ou valor monetário. Apagar a conta remove
-        também suas salas e resultados na Arena.
-      </Text>
-      <Button disabled={busy} onPress={onSignOut}>
-        Sair deste aparelho
-      </Button>
-      {deleting ? (
-        <>
-          <Text style={s.error}>
-            Excluir permanentemente seu jogador e histórico?
-          </Text>
-          <Button disabled={busy} onPress={onDeleteAccount}>
-            Confirmar exclusão
-          </Button>
-          <Button onPress={() => setDeleting(false)}>Cancelar</Button>
-        </>
-      ) : (
-        <Button onPress={() => setDeleting(true)}>Excluir conta</Button>
-      )}
+      {/* Conta em bloco próprio no fim: sair e excluir não são "mais uma
+          seção do perfil", e excluir não pode ter o mesmo peso visual de
+          sair. */}
+      <Card>
+        <Text style={s.heading}>Sua conta</Text>
+        <Text style={s.muted}>
+          Moedas ainda não têm loja ou valor monetário. Apagar a conta remove
+          também suas salas e resultados na Arena.
+        </Text>
+        <Button secondary disabled={busy} onPress={onSignOut}>
+          Sair deste aparelho
+        </Button>
+        {deleting ? (
+          <>
+            <Text style={s.error}>
+              Excluir permanentemente seu jogador e histórico? Não dá para
+              desfazer.
+            </Text>
+            <Button disabled={busy} onPress={onDeleteAccount}>
+              Confirmar exclusão
+            </Button>
+            <Button secondary onPress={() => setDeleting(false)}>
+              Cancelar
+            </Button>
+          </>
+        ) : (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setDeleting(true)}
+            style={{ minHeight: 44, justifyContent: "center" }}
+          >
+            <Text style={[s.muted, { color: palette.red, fontWeight: "700" }]}>
+              Excluir conta
+            </Text>
+          </Pressable>
+        )}
+      </Card>
     </>
   );
 }

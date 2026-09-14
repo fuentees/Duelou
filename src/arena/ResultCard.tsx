@@ -1,7 +1,7 @@
 import React from "react";
 import { Share, StyleSheet, Text, View } from "react-native";
 import Button from "../components/Button";
-import { palette, radius } from "../theme";
+import { arenaTierFor, palette, radius } from "../theme";
 import { ENEMY_COLOR, PLAYER_COLOR } from "./colors";
 import type { ArenaState } from "../../shared/arena/engine";
 import Character from "../components/Character";
@@ -19,6 +19,8 @@ export default function ResultCard({
   rematchLabel = "Revanche",
   avatar,
   playerName,
+  rating,
+  friendly = false,
 }: {
   state: ArenaState;
   // Se a própria base do jogador chegou a ficar crítica em algum momento e
@@ -33,6 +35,11 @@ export default function ResultCard({
   rematchLabel?: string;
   avatar?: unknown;
   playerName?: string;
+  // Nota da Arena depois desta partida. Ausente no modo contra o robô, que
+  // não vale classificação — e a tela diz isso, em vez de ficar ambígua.
+  rating?: { before: number; after: number; delta: number } | null;
+  // Partida por convite direto: conta no histórico, não na nota.
+  friendly?: boolean;
 }) {
   // Sempre a perspectiva de quem está vendo a tela — em PvP, o cliente já
   // recebe o estado invertido pra "player" ser sempre "eu" (ver Ticket 21).
@@ -75,6 +82,39 @@ export default function ResultCard({
       <Text style={[s.outcome, won && s.outcomeWon]}>{outcome}</Text>
       <Text style={s.highlight}>{highlight}</Text>
       </LinearGradient>
+      {friendly ? (
+        <View style={s.ratingRow}>
+          <Text style={s.ratingLabel}>AMISTOSO</Text>
+          <Text style={s.highlight}>Partida por convite — não altera sua nota.</Text>
+        </View>
+      ) : rating ? (
+        <View style={s.ratingRow}>
+          {(() => {
+            const before = arenaTierFor(rating.before).name;
+            const after = arenaTierFor(rating.after);
+            // Trocar de divisão é o momento mais importante da tela — vale
+            // mais destaque que a variação de pontos em si.
+            if (before === after.name) return <Text style={s.ratingLabel}>NOTA DA ARENA</Text>;
+            return (
+              <Text style={s.tierChange}>
+                {after.icon}{" "}
+                {rating.delta > 0 ? `Subiu para ${after.name}!` : `Caiu para ${after.name}`}
+              </Text>
+            );
+          })()}
+          <Text style={s.ratingValue}>
+            {rating.after}{" "}
+            <Text
+              style={{
+                color: rating.delta > 0 ? palette.green : rating.delta < 0 ? palette.red : palette.textDim,
+              }}
+            >
+              {rating.delta > 0 ? "▲ +" : rating.delta < 0 ? "▼ " : "= "}
+              {rating.delta !== 0 ? Math.abs(rating.delta) : ""}
+            </Text>
+          </Text>
+        </View>
+      ) : null}
       <View style={s.scoreRow}>
         <View style={s.scoreBlock}>
           <Text style={[s.scoreValue, { color: PLAYER_COLOR }]}>{Math.round(state.playerBaseHp)}</Text>
@@ -101,11 +141,12 @@ export default function ResultCard({
       {showTutorialInfo && (
         <View style={s.tutorialBox}>
           <Text style={s.tutorialTitle}>Como invocar mais forte</Text>
-          <Text style={s.tutorialLine}>⚡ Batedor — rápido, mas fraco</Text>
-          <Text style={s.tutorialLine}>🛡 Soldado — acerte rápido ou emende combo</Text>
-          <Text style={s.tutorialLine}>🛡🛡 Tanque — rápido E com combo x3+</Text>
+          <Text style={s.tutorialLine}>Batedor — rápido, mas fraco. Cerca tanques.</Text>
+          <Text style={s.tutorialLine}>Soldado — acerte rápido ou emende combo. Segura batedores.</Text>
+          <Text style={s.tutorialLine}>Tanque — rápido E com combo x3+. Atropela soldados.</Text>
           <Text style={s.tutorialLine}>
-            Combo é sua sequência de acertos seguidos — errar zera ele.
+            Combo é sua sequência de acertos seguidos — errar zera ele. Com
+            combo 4 dá pra invocar um tanque na hora, gastando o combo.
           </Text>
         </View>
       )}
@@ -143,6 +184,22 @@ const s = StyleSheet.create({
   outcome: { fontSize: 30, fontWeight: "900", color: palette.text },
   outcomeWon: { color: palette.green },
   highlight: { fontSize: 14, fontWeight: "700", color: palette.textDim, textAlign: "center" },
+  ratingRow: {
+    alignItems: "center",
+    gap: 2,
+    alignSelf: "stretch",
+    paddingVertical: 8,
+    borderRadius: radius.sm,
+    backgroundColor: palette.surfaceAlt,
+  },
+  ratingLabel: { fontSize: 10, fontWeight: "900", letterSpacing: 1, color: palette.textFaint },
+  tierChange: { fontSize: 15, fontWeight: "900", color: palette.text, textAlign: "center" },
+  ratingValue: {
+    fontSize: 24,
+    fontWeight: "900",
+    color: palette.text,
+    fontVariant: ["tabular-nums"],
+  },
   scoreRow: { flexDirection: "row", alignItems: "center", gap: 16 },
   scoreBlock: { alignItems: "center", gap: 2 },
   scoreValue: { fontSize: 34, fontWeight: "900" },

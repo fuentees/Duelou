@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import Pressy from "../components/Pressy";
-import { palette, radius } from "../theme";
+import { arena, palette, radius } from "../theme";
 import { ArenaChallenge, PublicArenaChallenge } from "./challenges";
 
 type SubmitPayload = { index: number } | { tapped: true };
@@ -30,12 +30,16 @@ export default function ChallengePanel({
   onSubmit,
   verdict,
   reflexGo,
+  dark = false,
 }: {
   challenge: ArenaChallenge | PublicArenaChallenge;
   onAnswer?: (correct: boolean, elapsedMs: number) => void;
   onSubmit?: (payload: SubmitPayload, elapsedMs: number) => void;
   verdict?: { correct: boolean } | null;
   reflexGo?: boolean;
+  // A partida online roda no tema escuro da arena (ver src/theme.ts); o
+  // treino contra o robô continua na tela clara do resto do app.
+  dark?: boolean;
 }) {
   const online = !!onSubmit;
   const [tapped, setTapped] = useState<Tapped | null>(null);
@@ -145,7 +149,13 @@ export default function ChallengePanel({
   return (
     <View style={s.panel}>
       <Text
-        style={[s.prompt, challenge.promptColor ? { color: challenge.promptColor } : null]}
+        style={[
+          s.prompt,
+          dark ? { color: arena.text } : null,
+          // A cor do enunciado é a própria pergunta no jogo "Cor certa" —
+          // ela sempre vence o tema.
+          challenge.promptColor ? { color: challenge.promptColor } : null,
+        ]}
       >
         {challenge.prompt}
       </Text>
@@ -164,11 +174,20 @@ export default function ChallengePanel({
               outerStyle={s.option}
               style={[
                 s.optionInner,
+                dark && !challenge.optionColors ? s.optionInnerDark : null,
                 challenge.optionColors ? { backgroundColor: challenge.optionColors[i] } : null,
                 isTapped ? { backgroundColor: tone(tapped!.correct) } : null,
               ]}
             >
-              <Text style={s.optionText}>{opt}</Text>
+              <Text
+                style={[
+                  s.optionText,
+                  dark && !challenge.optionColors && !isTapped ? { color: arena.text } : null,
+                  isTapped ? { color: "#FFFFFF" } : null,
+                ]}
+              >
+                {opt}
+              </Text>
             </Pressy>
           );
         })}
@@ -179,18 +198,22 @@ export default function ChallengePanel({
 
 const s = StyleSheet.create({
   panel: { gap: 10 },
-  prompt: { fontSize: 22, fontWeight: "800", color: palette.text, textAlign: "center" },
+  prompt: { fontSize: 24, fontWeight: "900", color: palette.text, textAlign: "center" },
   options: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   option: { flexGrow: 1, flexBasis: "45%" },
+  optionInnerDark: { backgroundColor: arena.surfaceAlt, borderWidth: 1, borderColor: arena.border },
   optionInner: {
-    minHeight: 48,
+    // 56 e não 48: é um alvo tocado sob pressão de tempo, com o polegar, e
+    // errar a alternativa por causa do tamanho do botão não é dificuldade do
+    // jogo, é defeito de tela.
+    minHeight: 56,
     borderRadius: radius.sm,
     backgroundColor: palette.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 8,
   },
-  optionText: { fontSize: 17, fontWeight: "800", color: palette.text },
+  optionText: { fontSize: 18, fontWeight: "800", color: palette.text },
   reflexButton: { width: "100%" },
   reflexInner: { minHeight: 96, borderRadius: radius.md, alignItems: "center", justifyContent: "center" },
   reflexText: { color: "#FFFFFF", fontSize: 20, fontWeight: "900" },

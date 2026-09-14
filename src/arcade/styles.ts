@@ -2,6 +2,29 @@ import { StyleSheet } from "react-native";
 import { palette, radius, shadow } from "../theme";
 
 export const s = StyleSheet.create({
+  // Veredito da rodada (Round.tsx): a opção certa e a que foi tocada ficam
+  // marcadas com símbolo além da cor — há quem não distinga verde de vermelho.
+  optionRight: { borderWidth: 3, borderColor: palette.green },
+  optionWrong: { borderWidth: 3, borderColor: palette.red },
+  goalTrack: {
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: palette.surfaceAlt,
+    overflow: "hidden",
+  },
+  goalFill: { height: 8, borderRadius: 4 },
+  resultLead: { fontSize: 16, fontWeight: "800", color: palette.text, lineHeight: 24 },
+  verdict: { fontSize: 15, fontWeight: "800", lineHeight: 22, textAlign: "center" },
+  optionRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  mark: { fontSize: 20, fontWeight: "900" },
+  markOverPiece: {
+    position: "absolute",
+    top: -6,
+    right: -4,
+    fontSize: 14,
+    fontWeight: "900",
+    color: palette.text,
+  },
   screen: { flex: 1, backgroundColor: palette.bg },
   top: {
     paddingHorizontal: 24,

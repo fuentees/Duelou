@@ -75,7 +75,7 @@ try {
   await checkLayout("catalog_320px");
   await page.getByRole("button", { name: "Menu", exact: true }).click();
   await checkLayout("menu_320px");
-  await page.getByRole("button", { name: "Som e música", exact: true }).click();
+  await page.getByRole("button", { name: "Configurações", exact: true }).click();
   await checkLayout("audio_320px");
   await page.getByRole("button", { name: "Arena", exact: true }).click();
   const card = page.getByRole("button", { name: "Conta rápida", exact: true });

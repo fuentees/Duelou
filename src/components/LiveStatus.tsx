@@ -1,6 +1,6 @@
 import React from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { palette, radius } from "../theme";
+import { arena, palette, radius } from "../theme";
 import Button from "./Button";
 
 export type LiveStatusState = "live" | "reconnecting" | "lost";
@@ -26,11 +26,15 @@ export default function LiveStatus({
   state,
   message,
   onRetry,
+  dark = false,
 }: {
   mode?: "inline" | "screen";
   state: LiveStatusState;
   message?: string;
   onRetry?: () => void;
+  // A Arena Rush roda no tema escuro (ver src/theme.ts); as salas casuais e
+  // o competitivo continuam na tela clara.
+  dark?: boolean;
 }) {
   const copy = COPY[state];
   const toneStyle =
@@ -54,10 +58,15 @@ export default function LiveStatus({
 
   return (
     <View style={s.screenBlock}>
-      <Text style={s.screenTitle} accessibilityLiveRegion="polite">
+      <Text
+        style={[s.screenTitle, dark ? { color: arena.text } : null]}
+        accessibilityLiveRegion="polite"
+      >
         {copy.label}
       </Text>
-      {!!message && <Text style={s.screenMessage}>{message}</Text>}
+      {!!message && (
+        <Text style={[s.screenMessage, dark ? { color: arena.textDim } : null]}>{message}</Text>
+      )}
       {state === "lost" && !!onRetry && (
         <Button secondary onPress={onRetry}>
           Tentar novamente

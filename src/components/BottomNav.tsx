@@ -13,6 +13,10 @@ const items: {
 }[] = [
   { id: "home", label: "Início", icon: "home" },
   { id: "arcade", label: "Arena", icon: "game-controller" },
+  // O duelo em tempo real é o modo principal do app (LiveApp.tsx só expõe o
+  // PvP) e estava escondido atrás do Menu, a dois toques. Entrada própria,
+  // com nome próprio: "Arena" são os jogos, "Duelo" é o 1×1 ao vivo.
+  { id: "arenaRush", label: "Duelo", icon: "flash" },
   { id: "ranking", label: "Ranking", icon: "trophy" },
   { id: "menu", label: "Menu", icon: "menu" },
 ];
@@ -33,8 +37,7 @@ export default function BottomNav({
       {items.map((item) => {
         const active =
           section === item.id ||
-          ((section === "profile" || section === "audio" || section === "arenaRush") &&
-            item.id === "menu");
+          ((section === "profile" || section === "audio") && item.id === "menu");
         return (
           <Pressable
             key={item.id}
@@ -72,7 +75,9 @@ const s = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     gap: 2,
-    minWidth: 64,
+    // Cinco destinos precisam caber num aparelho de 320px de largura sem
+    // estourar a linha — daí 56 em vez dos 64 de quando eram quatro.
+    minWidth: 56,
     minHeight: 48,
     padding: 2,
   },

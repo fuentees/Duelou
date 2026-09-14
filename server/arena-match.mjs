@@ -11,6 +11,7 @@ import {
   createArenaState,
   decideTroopType,
   spawn,
+  spendCombo,
   step,
 } from "../shared/arena/engine.ts";
 
@@ -96,7 +97,10 @@ export function createArenaMatchEngine({
    * src/arena/ArenaScreen.tsx (handleAnswer), só que por lado em vez de
    * hardcoded em "player", pra não divergir do que já foi validado offline.
    * Devolve null se a partida não existe/já acabou ou o uid não participa
-   * dela; senão `{ troopType }` (null quando errou, não invoca nada).
+   * dela; senão `{ troopType, spawned }`. `troopType` é null quando errou (não
+   * invoca nada) e `spawned` é false quando o acerto foi válido mas a pista
+   * já estava no teto de tropas — antes esse caso passava batido, o jogador
+   * continuava acertando e nada aparecia em campo, sem nenhum aviso.
    */
   function applyAnswer(matchId, uid, { correct, elapsedMs, kind }) {
     const match = matches.get(matchId);
@@ -108,15 +112,31 @@ export function createArenaMatchEngine({
     state.stats[side].challengesTotal++;
     if (!correct) {
       state.combo[side] = 0;
-      return { troopType: null };
+      return { troopType: null, spawned: false };
     }
     state.combo[side]++;
     state.stats[side].maxCombo = Math.max(state.stats[side].maxCombo, state.combo[side]);
     const fast = kind === "reflex" ? elapsedMs < FAST_REFLEX_MS : elapsedMs < FAST_CHOICE_MS;
     const troopType = decideTroopType(fast, state.combo[side]);
-    spawn(state, side, troopType);
-    state.stats[side].hits++;
-    return { troopType };
+    // O combo conta mesmo com a pista cheia (o acerto foi legítimo), mas
+    // "hits" continua sendo só o que virou tropa de verdade em campo.
+    const spawned = spawn(state, side, troopType);
+    if (spawned) state.stats[side].hits++;
+    return { troopType, spawned };
+  }
+
+  /**
+   * Gasta o combo acumulado do jogador pra invocar um tanque na hora (ver
+   * spendCombo em shared/arena/engine.ts). Quem valida se há combo é sempre
+   * o servidor — o cliente só pede. Devolve null se a partida/jogador não
+   * existe, senão `{ spent }`.
+   */
+  function useCombo(matchId, uid) {
+    const match = matches.get(matchId);
+    if (!match || match.ended) return null;
+    const side = match.sideOf.get(uid);
+    if (!side) return null;
+    return { spent: spendCombo(match.state, side) };
   }
 
   /**
@@ -170,6 +190,7 @@ export function createArenaMatchEngine({
     getMatch,
     sideOfPlayer,
     applyAnswer,
+    useCombo,
     forfeit,
     pauseMatch,
     resumeMatch,

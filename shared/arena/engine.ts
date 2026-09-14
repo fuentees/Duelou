@@ -23,6 +23,33 @@ export const TROOP_CONFIG: Record<TroopType, TroopConfig> = {
 };
 
 export const MAX_TROOPS_PER_SIDE = 10;
+// Vantagem de tipo. Sem isso o combate era só HP × dano: a composição do
+// exército não importava, tanque era sempre a melhor tropa e a partida
+// virava só "quem responde mais rápido". Com o triângulo, empilhar um tipo
+// só tem resposta: batedor cerca o tanque, tanque atropela o soldado,
+// soldado segura o batedor.
+export const COUNTER_BONUS = 2;
+const COUNTERS: Record<TroopType, TroopType> = {
+  scout: "tank",
+  tank: "soldier",
+  soldier: "scout",
+};
+export function counterMultiplier(attacker: TroopType, defender: TroopType): number {
+  return COUNTERS[attacker] === defender ? COUNTER_BONUS : 1;
+}
+
+// Invocação avulsa: gasta o combo acumulado pra colocar um tanque em campo
+// na hora, sem depender do próximo acerto. É a única decisão da partida que
+// não é "responda mais rápido" — segurar o combo deixa as próximas
+// invocações mais fortes, gastá-lo dá pressão imediata.
+export const COMBO_SPEND_COST = 4;
+export const COMBO_SPEND_TROOP: TroopType = "tank";
+// Últimos segundos: todo dano à base vale dobrado. Sem isso, quem abria
+// vantagem cedo só precisava empilhar tanques no meio da pista e deixar o
+// relógio correr — a estratégia dominante era travar a partida, que é o
+// oposto do que um 1×1 de 100 segundos deveria premiar.
+export const SUDDEN_DEATH_SECONDS = 20;
+export const SUDDEN_DEATH_MULTIPLIER = 2;
 // Espaço mínimo entre duas tropas do mesmo lado na pista (0-100), pra não
 // ficarem sobrepostas nem quando uma fila inteira está parada atrás da linha
 // de frente engajada em combate.
@@ -128,6 +155,20 @@ export function spawn(
   return true;
 }
 
+/**
+ * Gasta o combo acumulado de um lado pra invocar um tanque na hora. Devolve
+ * false (sem gastar nada) se não há combo suficiente, se a pista está no teto
+ * ou se a partida já acabou — quem chama decide o que dizer pro jogador.
+ */
+export function spendCombo(state: ArenaState, side: Side): boolean {
+  if (state.over) return false;
+  if (state.combo[side] < COMBO_SPEND_COST) return false;
+  if (!spawn(state, side, COMBO_SPEND_TROOP)) return false;
+  state.combo[side] = 0;
+  state.stats[side].hits++;
+  return true;
+}
+
 // Avança a simulação em dtSeconds. `random` é sempre usado no lugar de
 // Math.random (aqui só entra numa pequena variação de dano de combate, pra
 // não ficar mecânico) — nunca chamado diretamente, pra manter a partida
@@ -150,8 +191,16 @@ export function step(
 
   if (engaged && playerFront && enemyFront) {
     const variance = () => 0.85 + random() * 0.3; // ±15%, evita sensação "robótica"
-    enemyFront.hp -= TROOP_CONFIG[playerFront.type].dps * dtSeconds * variance();
-    playerFront.hp -= TROOP_CONFIG[enemyFront.type].dps * dtSeconds * variance();
+    enemyFront.hp -=
+      TROOP_CONFIG[playerFront.type].dps *
+      dtSeconds *
+      variance() *
+      counterMultiplier(playerFront.type, enemyFront.type);
+    playerFront.hp -=
+      TROOP_CONFIG[enemyFront.type].dps *
+      dtSeconds *
+      variance() *
+      counterMultiplier(enemyFront.type, playerFront.type);
     events.push({
       type: "combat",
       playerTroopId: playerFront.id,
@@ -191,8 +240,10 @@ export function step(
   const arrived = state.troops.filter(
     (t) => (t.side === "player" && t.position >= 100) || (t.side === "enemy" && t.position <= 0),
   );
+  const suddenDeath = state.timeRemaining <= SUDDEN_DEATH_SECONDS;
   for (const t of arrived) {
-    const dmg = TROOP_CONFIG[t.type].baseDamage;
+    const dmg =
+      TROOP_CONFIG[t.type].baseDamage * (suddenDeath ? SUDDEN_DEATH_MULTIPLIER : 1);
     if (t.side === "player") state.enemyBaseHp = Math.max(0, state.enemyBaseHp - dmg);
     else state.playerBaseHp = Math.max(0, state.playerBaseHp - dmg);
     events.push({
@@ -217,13 +268,30 @@ export function step(
           : state.enemyBaseHp <= 0
             ? "player"
             : state.playerBaseHp === state.enemyBaseHp
-              ? "draw"
+              ? decideByPerformance(state)
               : state.playerBaseHp > state.enemyBaseHp
                 ? "player"
                 : "enemy";
     events.push({ type: "matchOver", winner: state.winner });
   }
   return events;
+}
+
+// Desempate quando o tempo acaba com as duas bases na mesma vida. "Empate"
+// como primeira resposta é frustrante em 1×1: os dois jogaram a partida
+// inteira e ninguém leva nada. Então antes disso vale, em ordem, quem tem
+// mais tropa viva em campo (pressão no fim), quem fez o maior combo e quem
+// invocou mais. Só se tudo empatar é empate de verdade.
+function decideByPerformance(state: ArenaState): Side | "draw" {
+  const alive = (side: Side) => state.troops.reduce((n, t) => n + (t.side === side ? 1 : 0), 0);
+  const criteria: [number, number][] = [
+    [alive("player"), alive("enemy")],
+    [state.stats.player.maxCombo, state.stats.enemy.maxCombo],
+    [state.stats.player.hits, state.stats.enemy.hits],
+  ];
+  for (const [mine, theirs] of criteria)
+    if (mine !== theirs) return mine > theirs ? "player" : "enemy";
+  return "draw";
 }
 
 // Regra de invocação, compartilhada entre o cliente offline (contra bot) e o

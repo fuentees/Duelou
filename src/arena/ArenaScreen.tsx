@@ -1,14 +1,16 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Animated, AppState, StyleSheet, Text, View } from "react-native";
+import { Animated, AppState, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   ArenaState,
+  COMBO_SPEND_COST,
   FAST_CHOICE_MS,
   FAST_REFLEX_MS,
   Side,
   createArenaState,
   decideTroopType,
   spawn,
+  spendCombo,
   step,
 } from "../../shared/arena/engine";
 import { ArenaChallenge, nextChallenge, resetChallengeSequence } from "./challenges";
@@ -133,8 +135,9 @@ export default function ArenaScreen({
       state.stats.player.maxCombo = Math.max(state.stats.player.maxCombo, state.combo.player);
       const fast = kind === "reflex" ? elapsedMs < FAST_REFLEX_MS : elapsedMs < FAST_CHOICE_MS;
       const troopType = decideTroopType(fast, state.combo.player);
-      spawn(state, "player", troopType);
-      state.stats.player.hits++;
+      // Igual ao PvP (server/arena-match.mjs): com a pista no teto de tropas
+      // o acerto não vira tropa, e "hits" só conta o que entrou em campo.
+      if (spawn(state, "player", troopType)) state.stats.player.hits++;
       playSuccess();
     }
     rerender();
@@ -361,6 +364,39 @@ export default function ArenaScreen({
               </Text>
             )}
           </View>
+          {/* Mesma decisão do PvP (ver shared/arena/engine.ts): o treino
+              precisa ensinar o jogo que a pessoa vai jogar de verdade. */}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ disabled: state.combo.player < COMBO_SPEND_COST }}
+            accessibilityLabel={
+              state.combo.player >= COMBO_SPEND_COST
+                ? "Gastar combo para invocar um tanque agora"
+                : `Invocar tanque: precisa de combo ${COMBO_SPEND_COST}, você tem ${state.combo.player}`
+            }
+            disabled={state.combo.player < COMBO_SPEND_COST}
+            onPress={() => {
+              if (spendCombo(arenaRef.current, "player")) {
+                playSuccess();
+                rerender();
+              }
+            }}
+            style={[
+              s.comboButton,
+              state.combo.player >= COMBO_SPEND_COST ? s.comboButtonReady : null,
+            ]}
+          >
+            <Text
+              style={[
+                s.comboButtonText,
+                state.combo.player >= COMBO_SPEND_COST ? s.comboButtonTextReady : null,
+              ]}
+            >
+              {state.combo.player >= COMBO_SPEND_COST
+                ? `INVOCAR TANQUE AGORA · GASTA COMBO x${COMBO_SPEND_COST}`
+                : `Tanque na hora: combo ${state.combo.player}/${COMBO_SPEND_COST}`}
+            </Text>
+          </Pressable>
           <View style={s.panel}>
             {challenge && (
               <ChallengePanel key={challengeSeq} challenge={challenge} onAnswer={handleAnswer} />
@@ -435,6 +471,19 @@ const s = StyleSheet.create({
   },
   row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   combo: { fontSize: 13, fontWeight: "900", color: palette.amber },
+  comboButton: {
+    minHeight: 48,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surfaceAlt,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 10,
+  },
+  comboButtonReady: { backgroundColor: palette.amber, borderColor: palette.amber },
+  comboButtonText: { fontSize: 13, fontWeight: "800", color: palette.textDim, textAlign: "center" },
+  comboButtonTextReady: { color: "#2A1D00", fontWeight: "900" },
   panel: {
     padding: 16,
     borderRadius: radius.md,

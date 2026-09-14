@@ -5,6 +5,7 @@ import {
   Platform,
   ScrollView,
   Text,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { api, captureSession } from "../api";
@@ -29,6 +30,7 @@ import {
 } from "../../shared/progression.mjs";
 import {
   readCampaign,
+  readAllCampaigns,
   saveCampaign,
   campaignSyncEnabled,
   setCampaignSync,
@@ -46,6 +48,7 @@ import BottomNav, { Section } from "../components/BottomNav";
 import AppHeader from "../components/AppHeader";
 import type { LiveStatusState } from "../components/LiveStatus";
 import { playFail, playSuccess } from "../audio/sounds";
+import { palette } from "../theme";
 import { s } from "./styles";
 
 // A partir de quantas falhas seguidas de heartbeat/poll o status vira "lost"
@@ -113,12 +116,17 @@ export default function ArcadeScreen({
   onInviteConsumed,
   onNavigate,
   onLogin,
+  initialGame,
+  onInitialGameConsumed,
 }: {
   player: { id: string; name: string } | null;
   inviteCode: string;
   onInviteConsumed: () => void;
   onNavigate: (section: Section) => void;
   onLogin: () => void;
+  // Jogo aberto direto pela tela inicial ("Continuar de onde parou").
+  initialGame?: string | null;
+  onInitialGameConsumed?: () => void;
 }) {
   const [campaign, setCampaign] = useState<CampaignProgress>({
     unlocked: 1,
@@ -131,6 +139,10 @@ export default function ArcadeScreen({
   );
   const syncIdentity = useRef("");
   const [campaignReady, setCampaignReady] = useState(false);
+  // Progresso de todos os jogos, só pra lista: cada capa mostra em que fase
+  // está e quantas estrelas rendeu. Recarrega sempre que a campanha do jogo
+  // aberto muda (terminou uma fase) e ao voltar pra lista.
+  const [allCampaigns, setAllCampaigns] = useState<Record<string, CampaignProgress>>({});
   const [soloKind, setSoloKind] = useState<"campaign" | "training" | "daily">(
     "campaign",
   );
@@ -170,6 +182,19 @@ export default function ArcadeScreen({
     epoch = useRef(0),
     consecutiveFailures = useRef(0);
   syncIdentity.current = (player?.id || "guest") + ":" + mode;
+  useEffect(() => {
+    let active = true;
+    readAllCampaigns(player?.id)
+      .then((all) => {
+        if (active) setAllCampaigns(all);
+      })
+      .catch(() => {
+        // Sem progresso local, a lista aparece sem os selos — não é erro.
+      });
+    return () => {
+      active = false;
+    };
+  }, [player?.id, campaign, screen]);
   useEffect(() => {
     const request = captureSession();
     let active = true;
@@ -651,15 +676,44 @@ export default function ArcadeScreen({
                     : "Treino livre · sua patente permanece igual"}
               </Text>
               <AnimatedNumber value={localScore} style={s.score} />
-              <Text style={s.title}>{performanceLabel(localScore)}</Text>
-              {resultDetails(offline, localAnswers).map((line) => (
-                <Text key={line} style={s.body}>
-                  {line}
-                </Text>
-              ))}
+              {/* A legenda do número ficava quatro linhas abaixo dele, depois
+                  da lista de erros — longe do que ela explica. */}
               <Text style={s.caption}>
                 de 1.000 pontos · resultado desta partida
               </Text>
+              <Text style={s.title}>{performanceLabel(localScore)}</Text>
+              {soloKind === "campaign" && (
+                <>
+                  {/* A meta da fase é a informação que decide o que fazer em
+                      seguida; estava no fim, depois do recorde. */}
+                  <View style={s.goalTrack}>
+                    <View
+                      style={[
+                        s.goalFill,
+                        {
+                          width: `${Math.min(100, Math.round((100 * localScore) / campaignGoals(offline.mode, offline.difficulty).clear))}%` as `${number}%`,
+                          backgroundColor:
+                            localScore >= campaignGoals(offline.mode, offline.difficulty).clear
+                              ? palette.green
+                              : palette.violet,
+                        },
+                      ]}
+                    />
+                  </View>
+                  <Text style={s.body}>
+                    {localScore >= campaignGoals(offline.mode, offline.difficulty).clear
+                      ? offline.difficulty === 30
+                        ? "Campanha dominada! Busque três estrelas nas fases anteriores."
+                        : "Próxima fase liberada!"
+                      : `Faltam ${campaignGoals(offline.mode, offline.difficulty).clear - localScore} pontos para liberar a fase ${offline.difficulty + 1}.`}
+                  </Text>
+                </>
+              )}
+              {resultDetails(offline, localAnswers).map((line, index) => (
+                <Text key={line} style={index === 0 ? s.resultLead : s.body}>
+                  {index === 1 ? "O que escapou — " + line : line}
+                </Text>
+              ))}
               {soloKind === "daily" && (
                 <Text style={s.body}>
                   Seu melhor de hoje: {dailyBest} pontos. Você pode tentar
@@ -673,14 +727,6 @@ export default function ArcadeScreen({
                       ? "Novo recorde nesta fase! "
                       : ""}
                     Melhor: {campaign.best[offline.difficulty] || 0} pontos.
-                  </Text>
-                  <Text style={s.body}>
-                    {localScore >=
-                    campaignGoals(offline.mode, offline.difficulty).clear
-                      ? offline.difficulty === 30
-                        ? "Campanha dominada! Busque três estrelas nas fases anteriores."
-                        : "Próxima fase liberada!"
-                      : `Faça ${campaignGoals(offline.mode, offline.difficulty).clear} pontos para avançar. Pratique o exemplo antes de tentar novamente.`}
                   </Text>
                   {localScore >=
                     campaignGoals(offline.mode, offline.difficulty).clear &&
@@ -785,6 +831,9 @@ export default function ArcadeScreen({
             onToggleSync={toggleCampaignSync}
             onRetrySync={retryCampaignSync}
             campaignReady={campaignReady}
+            allCampaigns={allCampaigns}
+            initialGame={initialGame}
+            onInitialGameConsumed={onInitialGameConsumed}
             soloKind={soloKind}
             setSoloKind={setSoloKind}
             onCompetitive={competitive}

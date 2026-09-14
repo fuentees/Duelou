@@ -37,6 +37,13 @@ type Leader = Stats & { id: string; name: string };
 type PlayTab = "online" | "friends" | "offline";
 type Props = {
   campaign: CampaignProgress;
+  // Progresso de todos os jogos, pra lista mostrar fase e estrelas em cada
+  // capa (ver src/arcade/campaign.ts, readAllCampaigns).
+  allCampaigns: Record<string, CampaignProgress>;
+  // Jogo aberto direto (vindo do "Continuar" da tela inicial), consumido uma
+  // única vez pra não prender a navegação nele.
+  initialGame?: string | null;
+  onInitialGameConsumed?: () => void;
   campaignReady: boolean;
   syncEnabled: boolean;
   syncBusy: boolean;
@@ -75,6 +82,14 @@ type Props = {
 
 export default function BrowseView(p: Props) {
   const [step, setStep] = useState("home");
+  useEffect(() => {
+    if (!p.initialGame || !modes.some((m) => m.id === p.initialGame)) return;
+    p.setMode(p.initialGame as ArcadeMode);
+    p.setDifficulty(1);
+    setStep("mode");
+    p.onInitialGameConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p.initialGame]);
   const games = modes.map((g) => ({
     id: g.id,
     name: g.name,
@@ -129,70 +144,138 @@ export default function BrowseView(p: Props) {
           <Text style={v.description}>
             Aprenda sozinho. Desafie a turma. Conquiste sua patente.
           </Text>
-          <Button disabled={p.busy} onPress={p.onCompetitive}>
-            Jogar competitivo
-          </Button>
-          <Text style={v.description}>
-            Fila única 1 × 1 · melhor de 3 · jogo em rotação · classificação por
-            habilidade. Cinco séries iniciais de colocação. Até cinco séries por
-            rival por dia alteram sua classificação.
-          </Text>
-          <Button secondary onPress={p.onDaily}>
-            Desafio do dia
-          </Button>
+          {/* Mesmo formato da tela de cada jogo: o que é, em uma linha, e o
+              que o toque faz. O parágrafo de regras da fila competitiva vinha
+              depois do botão, quando já não servia pra decidir nada. */}
+          <View style={v.choice}>
+            <Text style={v.choiceTitle}>Fila competitiva</Text>
+            <Text style={v.description}>
+              1 × 1, melhor de 3, jogo em rotação e classificação por
+              habilidade. As cinco primeiras séries são de colocação; até cinco
+              séries por rival por dia mexem na sua patente.
+            </Text>
+            <Button disabled={p.busy} onPress={p.onCompetitive}>
+              Jogar competitivo
+            </Button>
+          </View>
+          <View style={v.choice}>
+            <Text style={v.choiceTitle}>Desafio do dia</Text>
+            <Text style={v.description}>
+              Uma prova por dia, igual para todo mundo, com recorde próprio.
+              Não altera patente.
+            </Text>
+            <Button secondary onPress={p.onDaily}>
+              Jogar o desafio de hoje
+            </Button>
+          </View>
           <Text style={v.heading}>
             Campanha, treino e amigos · {games.length} jogos
           </Text>
-          <GameGrid games={games} onChoose={choose} />
+          <GameGrid
+            games={games}
+            onChoose={choose}
+            progress={Object.fromEntries(
+              modes.map((m) => {
+                const done = p.allCampaigns?.[m.id];
+                return [
+                  m.id,
+                  {
+                    level: done?.unlocked ?? 1,
+                    stars: Object.entries(done?.best ?? {}).reduce(
+                      (sum, [level, score]) => sum + starsFor(score, m.id, Number(level)),
+                      0,
+                    ),
+                  },
+                ];
+              }),
+            )}
+          />
         </>
       ) : (
         <>
           <Text style={v.title}>{selected.name}</Text>
           {step === "mode" ? (
             <>
-              <Text style={v.description}>Como você quer jogar?</Text>
-              <Button
-                disabled={!p.campaignReady}
-                onPress={() => solo("campaign")}
-              >
-                Jogar sozinho
-              </Button>
-              <Text style={v.description}>
-                Campanha · 30 fases · progresso salvo neste aparelho, mesmo sem
-                conta. Fase atual: {p.campaign.unlocked}.
-              </Text>
-              <Text style={v.description}>{p.syncStatus}</Text>
-              <Text style={v.description}>
-                Sincronização opcional: une as melhores fases deste aparelho com
-                sua conta, sem alterar a classificação.
-              </Text>
-              <Button secondary disabled={p.syncBusy} onPress={p.onToggleSync}>
-                {!p.player
-                  ? "Entrar para sincronizar"
-                  : p.syncEnabled
-                    ? "Desativar sincronização"
-                    : "Ativar sincronização"}
-              </Button>
-              {p.syncEnabled && (
-                <Button secondary disabled={p.syncBusy} onPress={p.onRetrySync}>
-                  Sincronizar agora
+              {/* Três formas de jogar, cada uma num cartão que diz o que é,
+                  onde você está e o que o toque faz. Antes eram botões
+                  empilhados com parágrafos no meio: a explicação da campanha
+                  vinha depois do botão dela, e a sincronização (que não é uma
+                  forma de jogar) ficava entre as duas primeiras. */}
+              <Text style={v.heading}>Como você quer jogar?</Text>
+              <View style={v.choice}>
+                <Text style={v.choiceTitle}>Campanha</Text>
+                <Text style={v.description}>
+                  30 fases em seis capítulos, uma destravando a próxima.
+                  Progresso salvo neste aparelho, mesmo sem conta.
+                </Text>
+                <View style={v.progressRow}>
+                  <View style={v.progressTrack}>
+                    <View
+                      style={[
+                        v.progressFill,
+                        { width: `${Math.round((100 * p.campaign.unlocked) / MAX_LEVEL)}%` },
+                      ]}
+                    />
+                  </View>
+                  <Text style={v.count}>
+                    fase {p.campaign.unlocked} de {MAX_LEVEL}
+                  </Text>
+                </View>
+                <Button disabled={!p.campaignReady} onPress={() => solo("campaign")}>
+                  {p.campaign.unlocked > 1
+                    ? `Continuar na fase ${p.campaign.unlocked}`
+                    : "Começar a campanha"}
                 </Button>
-              )}
-              <Button secondary onPress={() => solo("training")}>
-                Treino livre
-              </Button>
-              <Text style={v.description}>
-                Escolha qualquer nível. Pratique sem afetar campanha ou patente.
-              </Text>
-              <Button
-                secondary
-                onPress={() => {
-                  p.setTab("online");
-                  setStep("online");
-                }}
-              >
-                Multijogador
-              </Button>
+              </View>
+
+              <View style={v.choice}>
+                <Text style={v.choiceTitle}>Treino livre</Text>
+                <Text style={v.description}>
+                  Qualquer nível, quantas vezes quiser. Não altera campanha,
+                  patente nem nota.
+                </Text>
+                <Button secondary onPress={() => solo("training")}>
+                  Escolher um nível
+                </Button>
+              </View>
+
+              <View style={v.choice}>
+                <Text style={v.choiceTitle}>Multijogador</Text>
+                <Text style={v.description}>
+                  Salas com a turma ou a fila competitiva 1 × 1.
+                </Text>
+                <Button
+                  secondary
+                  onPress={() => {
+                    p.setTab("online");
+                    setStep("online");
+                  }}
+                >
+                  Ver salas e fila
+                </Button>
+              </View>
+
+              {/* Sincronização não é uma forma de jogar: fica no rodapé, com o
+                  estado atual em vez de um parágrafo solto. */}
+              <View style={v.syncBox}>
+                <Text style={v.syncTitle}>Sincronização da campanha</Text>
+                <Text style={v.description}>
+                  {p.syncStatus} Une as melhores fases deste aparelho com sua
+                  conta, sem alterar a classificação.
+                </Text>
+                <Button secondary disabled={p.syncBusy} onPress={p.onToggleSync}>
+                  {!p.player
+                    ? "Entrar para sincronizar"
+                    : p.syncEnabled
+                      ? "Desativar sincronização"
+                      : "Ativar sincronização"}
+                </Button>
+                {p.syncEnabled && (
+                  <Button secondary disabled={p.syncBusy} onPress={p.onRetrySync}>
+                    Sincronizar agora
+                  </Button>
+                )}
+              </View>
             </>
           ) : step === "difficulty" ? (
             <>
@@ -423,6 +506,31 @@ const v = StyleSheet.create({
     marginTop: 12,
   },
   count: { color: palette.textFaint, fontSize: 13 },
+  choice: {
+    gap: 10,
+    padding: 16,
+    borderRadius: 18,
+    backgroundColor: palette.surface,
+    borderWidth: 1,
+    borderColor: palette.border,
+  },
+  choiceTitle: { fontSize: 18, fontWeight: "800", color: palette.text },
+  progressRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  progressTrack: {
+    flex: 1,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: palette.surfaceAlt,
+    overflow: "hidden",
+  },
+  progressFill: { height: 6, backgroundColor: palette.violet },
+  syncBox: {
+    gap: 10,
+    padding: 16,
+    borderRadius: 18,
+    backgroundColor: palette.surfaceAlt,
+  },
+  syncTitle: { fontSize: 14, fontWeight: "800", color: palette.text },
   description: { fontSize: 14, lineHeight: 21, color: palette.textDim },
   back: { fontSize: 14, color: palette.textDim, paddingVertical: 10 },
   game: {

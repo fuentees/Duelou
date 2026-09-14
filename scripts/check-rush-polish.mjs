@@ -37,7 +37,9 @@ try {
       await route.fulfill({ response: await route.fetch({ url: base + url.pathname + url.search }) });
     });
     await page.goto("http://localhost:8083");
-    await page.getByRole("button", { name: "Conhecer Arena Rush", exact: true }).click();
+    // Pela barra de baixo: o cartão da tela inicial troca de texto quando a
+    // conta já tem duelos ("Duelar agora"), então não serve de âncora fixa.
+    await page.getByRole("button", { name: "Duelo", exact: true }).click();
     await page.getByRole("button", { name: "Buscar adversário", exact: true }).waitFor();
     await checkLayout(page);
     if (!index) await page.screenshot({ path: "work/rush-lobby.png", fullPage: true });
@@ -59,8 +61,10 @@ try {
   await pages[1].getByText("VITÓRIA", { exact: true }).waitFor();
   await pages[1].getByText("Vitória por saída do adversário.", { exact: true }).waitFor();
   await pages[1].screenshot({ path: "work/rush-result.png", fullPage: true });
-  await pages[1].getByRole("button", { name: "Voltar para jogar", exact: true }).click();
-  await pages[1].getByRole("button", { name: "Buscar adversário", exact: true }).waitFor();
+  // "Jogar outra" volta direto pra fila (Ticket de fila por nota), sem passar
+  // pelo lobby — quem quiser sair usa "Menu".
+  await pages[1].getByRole("button", { name: "Jogar outra", exact: true }).click();
+  await pages[1].getByRole("button", { name: "Cancelar", exact: true }).waitFor({ timeout: 10000 });
   assert.deepEqual(errors, []);
   console.log("PASS: lobby 320/390px, cancelar busca, duelo WebSocket isolado, vida e tempo, resultado e retorno ao lobby.");
 } finally {

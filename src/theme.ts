@@ -18,6 +18,27 @@ export const palette = {
   red: "#E11D48",
   gold: "#FFB703",
 };
+// Tema da partida da Arena Rush. O app inteiro é claro e continua sendo —
+// mas o campo de batalha em rosa/lilás pastel dizia "passatempo", não
+// "duelo", e tropa colorida sobre fundo claro tem menos contraste do que
+// merece. A arena é o único lugar escuro do app: comunica o que é e faz as
+// duas cores dos lados saltarem.
+export const arena = {
+  bg: "#0E1222",
+  surface: "#171C30",
+  surfaceAlt: "#1F2540",
+  border: "#2C3454",
+  text: "#F2F4FF",
+  textDim: "#A9B0D0",
+  textFaint: "#7C85AB",
+  lane: ["#151A2E", "#1B2340", "#141A2C"] as const,
+  // Versões claras dos acentos: verde/vermelho/âmbar da paleta clara ficam
+  // escuros demais sobre o fundo da arena e perdem contraste justamente nos
+  // avisos que mais importam (crítico, morte súbita, conexão).
+  good: "#3DDC97",
+  warn: "#FFC14D",
+  danger: "#FF6584",
+};
 export const gradients = {
   hero: ["#6742DB", "#086E7A"] as const,
   brand: ["#7C5CFF", "#12B8C4"] as const,
@@ -100,6 +121,26 @@ const ranks: Rank[] = [
   { name: "Diamante", icon: "💎", colors: ["#7C5CFF", "#5B4FE8"] },
   { name: "Lendário", icon: "👑", colors: ["#FF4D8D", "#E0367A"] },
 ];
+// Divisão da Arena Rush, a partir da nota do duelo em tempo real
+// (server/arena-rating.mjs). Nome diferente de propósito: "patente" é da fila
+// competitiva e continua vindo só de lá — são dois números medindo coisas
+// diferentes, e chamar os dois de patente seria mentir sobre isso. O visual é
+// o mesmo (mesmas cores e ícones) pra não inventar uma segunda linguagem.
+const ARENA_TIER_FLOOR = [0, 900, 1050, 1200, 1350, 1500];
+export function arenaTierFor(rating: number): Rank {
+  let index = 0;
+  for (let i = 0; i < ARENA_TIER_FLOOR.length; i++)
+    if (rating >= ARENA_TIER_FLOOR[i]!) index = i;
+  return ranks[index]!;
+}
+
+/** Nota que falta pra próxima divisão — null quando já está na última. */
+export function nextArenaTier(rating: number): { tier: Rank; missing: number } | null {
+  const next = ARENA_TIER_FLOOR.findIndex((floor) => rating < floor);
+  if (next === -1) return null;
+  return { tier: ranks[next]!, missing: ARENA_TIER_FLOOR[next]! - rating };
+}
+
 export function rankFor(level: number): Rank {
   const idx = Math.min(ranks.length - 1, Math.floor((level - 1) / 5));
   return ranks[idx];

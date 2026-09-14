@@ -40,10 +40,9 @@ function challengeLocator(page) {
 }
 
 async function enterArenaRush(page) {
-  await page.getByRole("button", { name: "Menu", exact: true }).click();
-  await page
-    .getByRole("button", { name: "Duelo ao vivo · Arena Rush (Beta)", exact: true })
-    .click();
+  // O duelo tem destino próprio na barra de baixo desde que virou o modo
+  // principal — não está mais escondido dentro do Menu.
+  await page.getByRole("button", { name: "Duelo", exact: true }).click();
   await page.getByRole("button", { name: "Buscar adversário", exact: true }).click();
 }
 

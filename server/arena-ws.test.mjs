@@ -278,12 +278,15 @@ test("fechar 1 de 2 abas da mesma conta não afeta a partida (nem faz o outro la
     await new Promise((r) => setTimeout(r, 400));
     assert.equal(msgsB.some((m) => m.type === "opponentDisconnected"), false);
 
-    // E a partida continua "falando" com Bob (broadcasts de "state" não
-    // pararam) — prova que fechar 1 de 2 abas não deixa a partida muda.
-    const stateCountBefore = msgsB.filter((m) => m.type === "state").length;
+    // E a partida continua "falando" com Bob — prova que fechar 1 de 2 abas
+    // não deixa a partida muda. Conta os dois formatos: o retrato completo
+    // ("state") vai de tempos em tempos e o que mudou ("statePatch") vai a
+    // cada tique com novidade (ver shared/arena/statePatch.ts).
+    const updates = () =>
+      msgsB.filter((m) => m.type === "state" || m.type === "statePatch").length;
+    const before = updates();
     await new Promise((r) => setTimeout(r, 300));
-    const stateCountAfter = msgsB.filter((m) => m.type === "state").length;
-    assert.ok(stateCountAfter > stateCountBefore, "broadcasts de state deveriam continuar chegando");
+    assert.ok(updates() > before, "as atualizações da partida deveriam continuar chegando");
 
     wsA2.close();
     wsB.close();
@@ -391,6 +394,200 @@ test("conta excluída (DELETE /v1/me) em partida ativa não derruba o servidor p
     const health = await call("/health", null);
     assert.equal(health.status, 200, "servidor deveria continuar respondendo normalmente");
 
+    wsB.close();
+  });
+});
+
+test("revanche: os dois topam e voltam direto pra uma partida nova, sem passar pela fila", async () => {
+  await withServer(async ({ call, wsBase }) => {
+    const a = (await call("/v1/guests", null, { name: "Alice" })).data;
+    const b = (await call("/v1/guests", null, { name: "Bob" })).data;
+    const wsA = connect(wsBase, a.token);
+    const wsB = connect(wsBase, b.token);
+    await Promise.all([
+      new Promise((r) => wsA.once("open", r)),
+      new Promise((r) => wsB.once("open", r)),
+    ]);
+    const msgsA = collect(wsA);
+    const msgsB = collect(wsB);
+    wsA.send(JSON.stringify({ type: "queue" }));
+    await new Promise((r) => setTimeout(r, 80));
+    wsB.send(JSON.stringify({ type: "queue" }));
+    const found = await waitFor(msgsA, "matchFound");
+
+    wsA.send(JSON.stringify({ type: "forfeit", matchId: found.matchId }));
+    await waitFor(msgsA, "matchOver");
+    await waitFor(msgsB, "matchOver");
+
+    // Alice chama a revanche: ela espera, Bob recebe o convite.
+    msgsA.length = 0;
+    msgsB.length = 0;
+    wsA.send(JSON.stringify({ type: "rematch", matchId: found.matchId }));
+    await waitFor(msgsA, "rematchPending");
+    const invite = await waitFor(msgsB, "rematchRequested");
+    assert.equal(invite.matchId, found.matchId);
+
+    wsB.send(JSON.stringify({ type: "rematch", matchId: found.matchId }));
+    const again = await waitFor(msgsA, "matchFound");
+    const alsoAgain = await waitFor(msgsB, "matchFound");
+    assert.notEqual(again.matchId, found.matchId, "revanche é uma partida nova");
+    assert.equal(again.matchId, alsoAgain.matchId, "os dois na mesma partida");
+    assert.equal(again.opponent.name, "Bob");
+    assert.equal(alsoAgain.opponent.name, "Alice");
+
+    wsA.close();
+    wsB.close();
+  });
+});
+
+test("revanche: quem aceitou sozinho é avisado quando o adversário sai", async () => {
+  await withServer(async ({ call, wsBase }) => {
+    const a = (await call("/v1/guests", null, { name: "Alice" })).data;
+    const b = (await call("/v1/guests", null, { name: "Bob" })).data;
+    const wsA = connect(wsBase, a.token);
+    const wsB = connect(wsBase, b.token);
+    await Promise.all([
+      new Promise((r) => wsA.once("open", r)),
+      new Promise((r) => wsB.once("open", r)),
+    ]);
+    const msgsA = collect(wsA);
+    wsA.send(JSON.stringify({ type: "queue" }));
+    await new Promise((r) => setTimeout(r, 80));
+    wsB.send(JSON.stringify({ type: "queue" }));
+    const found = await waitFor(msgsA, "matchFound");
+    wsA.send(JSON.stringify({ type: "forfeit", matchId: found.matchId }));
+    await waitFor(msgsA, "matchOver");
+
+    wsA.send(JSON.stringify({ type: "rematch", matchId: found.matchId }));
+    await waitFor(msgsA, "rematchPending");
+    wsB.close(); // Bob fecha a aba em vez de responder
+    const declined = await waitFor(msgsA, "rematchDeclined");
+    assert.equal(declined.reason, "saiu");
+
+    wsA.close();
+  });
+});
+
+test("revanche de partida que não é sua (ou já encerrada) é recusada com erro claro", async () => {
+  await withServer(async ({ call, wsBase }) => {
+    const a = (await call("/v1/guests", null, { name: "Alice" })).data;
+    const wsA = connect(wsBase, a.token);
+    await new Promise((r) => wsA.once("open", r));
+    const msgsA = collect(wsA);
+    wsA.send(JSON.stringify({ type: "rematch", matchId: "partida-que-nunca-existiu" }));
+    const error = await waitFor(msgsA, "error");
+    assert.match(error.message, /revanche/i);
+    wsA.close();
+  });
+});
+
+test("convite direto: código junta os dois sem fila, e a partida amistosa não mexe na nota", async () => {
+  await withServer(async ({ app, call, wsBase }) => {
+    const a = (await call("/v1/guests", null, { name: "Alice" })).data;
+    const b = (await call("/v1/guests", null, { name: "Bob" })).data;
+    const wsA = connect(wsBase, a.token);
+    const wsB = connect(wsBase, b.token);
+    await Promise.all([
+      new Promise((r) => wsA.once("open", r)),
+      new Promise((r) => wsB.once("open", r)),
+    ]);
+    const msgsA = collect(wsA);
+    const msgsB = collect(wsB);
+
+    wsA.send(JSON.stringify({ type: "createInvite" }));
+    const invite = await waitFor(msgsA, "inviteCreated");
+    assert.match(invite.code, /^[0-9A-F]{6}$/);
+
+    // Código em minúsculas e com espaço, como alguém digitaria de verdade.
+    wsB.send(JSON.stringify({ type: "joinInvite", code: ` ${invite.code.toLowerCase()} ` }));
+    const foundA = await waitFor(msgsA, "matchFound");
+    const foundB = await waitFor(msgsB, "matchFound");
+    assert.equal(foundA.matchId, foundB.matchId);
+    assert.equal(foundA.friendly, true, "partida por convite é amistosa");
+    assert.equal(foundA.opponent.name, "Bob");
+
+    wsA.send(JSON.stringify({ type: "forfeit", matchId: foundA.matchId }));
+    const over = await waitFor(msgsA, "matchOver");
+    assert.equal(over.friendly, true);
+    assert.equal(over.rating, null, "amistoso não pode mexer na nota");
+
+    const ficha = await call("/v1/arena/me", a.token);
+    assert.equal(ficha.data.matches, 0, "amistoso não entra no cartel");
+    assert.equal(ficha.data.rating, 1000);
+
+    const historico = await call("/v1/arena/history", a.token);
+    assert.equal(historico.data.length, 1, "mas entra no histórico");
+    assert.equal(historico.data[0].friendly, true);
+
+    wsA.close();
+    wsB.close();
+  });
+});
+
+test("convite: código inválido, código próprio e convite já usado dão erro claro", async () => {
+  await withServer(async ({ call, wsBase }) => {
+    const a = (await call("/v1/guests", null, { name: "Alice" })).data;
+    const wsA = connect(wsBase, a.token);
+    await new Promise((r) => wsA.once("open", r));
+    const msgsA = collect(wsA);
+
+    wsA.send(JSON.stringify({ type: "joinInvite", code: "ZZZZZZ" }));
+    assert.match((await waitFor(msgsA, "error")).message, /não encontrado/i);
+
+    msgsA.length = 0;
+    wsA.send(JSON.stringify({ type: "createInvite" }));
+    const invite = await waitFor(msgsA, "inviteCreated");
+    msgsA.length = 0;
+    wsA.send(JSON.stringify({ type: "joinInvite", code: invite.code }));
+    assert.match((await waitFor(msgsA, "error")).message, /seu/i);
+
+    wsA.close();
+  });
+});
+
+test("o servidor manda o que mudou, não a partida inteira quinze vezes por segundo", async () => {
+  await withServer(async ({ call, wsBase }) => {
+    const a = (await call("/v1/guests", null, { name: "Alice" })).data;
+    const b = (await call("/v1/guests", null, { name: "Bob" })).data;
+    const wsA = connect(wsBase, a.token);
+    const wsB = connect(wsBase, b.token);
+    await Promise.all([
+      new Promise((r) => wsA.once("open", r)),
+      new Promise((r) => wsB.once("open", r)),
+    ]);
+    const msgsA = collect(wsA);
+    const bytes = { state: 0, patch: 0 };
+    wsA.on("message", (raw) => {
+      const parsed = JSON.parse(raw.toString());
+      if (parsed.type === "state") bytes.state += raw.length;
+      if (parsed.type === "statePatch") bytes.patch += raw.length;
+    });
+    wsA.send(JSON.stringify({ type: "queue" }));
+    await new Promise((r) => setTimeout(r, 80));
+    wsB.send(JSON.stringify({ type: "queue" }));
+    const found = await waitFor(msgsA, "matchFound");
+
+    // Joga de verdade por um tempo pra haver tropa em campo e movimento.
+    for (let i = 0; i < 4; i++) {
+      const challenge = msgsA.filter((m) => m.type === "challenge").pop();
+      if (challenge) answerWhateverComesFirst(wsA, challenge);
+      await new Promise((r) => setTimeout(r, 250));
+    }
+
+    const patches = msgsA.filter((m) => m.type === "statePatch");
+    const fulls = msgsA.filter((m) => m.type === "state");
+    assert.ok(patches.length > fulls.length * 3, "a maioria das atualizações tem que ser patch");
+    assert.ok(fulls.length >= 1, "o retrato completo continua indo de tempos em tempos");
+    const mediaPatch = bytes.patch / Math.max(1, patches.length);
+    const mediaCompleto = bytes.state / Math.max(1, fulls.length);
+    assert.ok(
+      mediaPatch < mediaCompleto,
+      `patch (${Math.round(mediaPatch)}B) deveria ser menor que o estado inteiro (${Math.round(mediaCompleto)}B)`,
+    );
+
+    wsA.send(JSON.stringify({ type: "forfeit", matchId: found.matchId }));
+    await waitFor(msgsA, "matchOver");
+    wsA.close();
     wsB.close();
   });
 });

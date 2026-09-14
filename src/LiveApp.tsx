@@ -69,6 +69,9 @@ export default function LiveApp() {
     return () => sub.remove();
   }, []);
   const [section, setSection] = useState<Section>("home");
+  // Jogo escolhido pelo "Continuar" da tela inicial — a Arena abre direto
+  // nele e limpa isso em seguida, igual ao código de convite.
+  const [startGame, setStartGame] = useState<string | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null),
     [boot, setBoot] = useState(true),
     [busy, setBusy] = useState(false),
@@ -214,7 +217,14 @@ export default function LiveApp() {
       />
     </SafeAreaView>
   ) : section === "home" ? (
-    <HomeScreen player={profile} onNavigate={setSection} />
+    <HomeScreen
+      player={profile}
+      onNavigate={setSection}
+      onContinueGame={(mode) => {
+        setStartGame(mode);
+        setSection("arcade");
+      }}
+    />
   ) : section === "menu" ? (
     <MenuScreen onNavigate={setSection} />
   ) : section === "audio" ? (
@@ -223,6 +233,8 @@ export default function LiveApp() {
     <Arcade
       inviteCode={inviteCode}
       onInviteConsumed={() => setInviteCode("")}
+      initialGame={startGame}
+      onInitialGameConsumed={() => setStartGame(null)}
       player={profile}
       onNavigate={setSection}
       onLogin={() => {
@@ -234,14 +246,18 @@ export default function LiveApp() {
     // PvP é o único modo agora (decisão do usuário) — o modo contra bot
     // (ArenaScreen/bot.ts) continua no repositório, testado, só deixa de
     // ser alcançado por aqui.
-    <ArenaLobby avatar={profile.avatar} onExit={() => setSection("menu")} />
+    <ArenaLobby
+      avatar={profile.avatar}
+      onExit={() => setSection("menu")}
+      onNavigate={setSection}
+    />
   ) : (
     <SafeAreaView style={s.screen}>
       <AppHeader status={profile.name} />
       <ScrollView contentContainerStyle={s.content}>
         <View style={s.between}>
           <Text style={s.heading}>
-            {section === "ranking" ? "Ranking da Arena" : "Perfil"}
+            {section === "ranking" ? "Ranking" : "Perfil"}
           </Text>
           <Pressable
             accessibilityRole="button"
