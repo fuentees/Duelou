@@ -67,6 +67,9 @@ export default function useArenaSocket() {
   // dois acertos seguidos idênticos precisam disparar o aviso duas vezes.
   const [lastAnswer, setLastAnswer] = useState<ArenaAnswerFeedback | null>(null);
   const [ratingDelta, setRatingDelta] = useState<ArenaRatingDelta | null>(null);
+  // Instante local (não o do servidor, que o cliente não tem) em que a
+  // partida começa — a tela de revelação conta até lá.
+  const [countdownEndsAt, setCountdownEndsAt] = useState<number | null>(null);
   const answerSeqRef = useRef(0);
 
   // Espelham o estado mais recente pra uso dentro de closures que não são
@@ -164,6 +167,9 @@ export default function useArenaSocket() {
             setMatchId(msg.matchId);
             setMe(msg.me);
             setOpponent(msg.opponent);
+            setCountdownEndsAt(
+              Date.now() + (typeof msg.countdownMs === "number" ? msg.countdownMs : 3000),
+            );
             setPhaseBoth("matchFound");
             break;
           case "matchResumed":
@@ -348,6 +354,7 @@ export default function useArenaSocket() {
     opponentLeft,
     errorMessage,
     rttMs,
+    countdownEndsAt,
     lastAnswer,
     ratingDelta,
     submitAnswer,

@@ -151,6 +151,20 @@ export default function ArenaOnlineScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket.state]);
 
+  // Contagem da largada: sem ela, o primeiro desafio aparecia de surpresa,
+  // logo depois da revelação do adversário.
+  const [countdown, setCountdown] = useState<number | null>(null);
+  useEffect(() => {
+    const endsAt = socket.countdownEndsAt;
+    if (socket.phase !== "matchFound" || !endsAt) {
+      setCountdown(null);
+      return;
+    }
+    setCountdown(endsAt - Date.now());
+    const timer = setInterval(() => setCountdown(endsAt - Date.now()), 120);
+    return () => clearInterval(timer);
+  }, [socket.phase, socket.countdownEndsAt]);
+
   const handleExit = () => {
     socket.disconnect();
     onExit?.();
@@ -200,6 +214,7 @@ export default function ArenaOnlineScreen({
     );
 
   if (socket.phase === "matchFound") {
+    const secondsToStart = countdown === null ? null : Math.max(0, Math.ceil(countdown / 1000));
     const members: BattleMember[] =
       socket.me && socket.opponent
         ? [
@@ -211,6 +226,16 @@ export default function ArenaOnlineScreen({
       <SafeAreaView style={s.screen}>
         <View style={s.center}>
           <BattlePresentation members={members} playerId={socket.me?.id} />
+          {secondsToStart !== null && (
+            <Text style={s.countdown} accessibilityLiveRegion="assertive">
+              {secondsToStart > 0 ? secondsToStart : "JÁ!"}
+            </Text>
+          )}
+          <Text style={s.countdownHint}>
+            {secondsToStart && secondsToStart > 0
+              ? "Prepare o polegar: o primeiro desafio aparece já já."
+              : "Responda para invocar."}
+          </Text>
         </View>
       </SafeAreaView>
     );
@@ -430,6 +455,14 @@ const s = StyleSheet.create({
   caption: { fontSize: 12, fontWeight: "800", color: arena.textFaint, flexShrink: 1, letterSpacing: 0.5 },
   combo: { fontSize: 13, fontWeight: "900", color: arena.warn },
   ping: { fontSize: 11, fontWeight: "800", fontVariant: ["tabular-nums"] },
+  countdown: {
+    fontSize: 64,
+    fontWeight: "900",
+    color: arena.text,
+    fontVariant: ["tabular-nums"],
+    textAlign: "center",
+  },
+  countdownHint: { fontSize: 13, color: arena.textDim, textAlign: "center" },
   enemyCombo: { fontSize: 12, fontWeight: "900", color: ENEMY_COLOR },
   suddenDeath: {
     fontSize: 12,

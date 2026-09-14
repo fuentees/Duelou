@@ -182,12 +182,17 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
     // Manda o próprio avatar/nome junto (não só o do adversário) — evita a
     // tela ter que depender de um perfil carregado à parte só pra saber
     // "quem sou eu" na revelação do confronto (Ticket 24).
+    // `countdownMs` junto com `startsAt`: o cliente não tem o relógio do
+    // servidor, então só com o instante absoluto ele não consegue mostrar
+    // uma contagem correta (dois aparelhos com horas diferentes veriam
+    // números diferentes). Com a duração, a contagem é igual pros dois.
     send(sockets.get(uidA), "matchFound", {
       matchId,
       you: "player",
       me: meA,
       opponent: meB,
       startsAt,
+      countdownMs,
     });
     send(sockets.get(uidB), "matchFound", {
       matchId,
@@ -195,6 +200,7 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
       me: meB,
       opponent: meA,
       startsAt,
+      countdownMs,
     });
     setTimeout(() => {
       issueNextChallenge(matchId, uidA);
