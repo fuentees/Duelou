@@ -28,6 +28,13 @@
 - Cuidado real já encontrado uma vez: qualquer erro não tratado dentro dos listeners de WebSocket (`server/arena-ws.mjs`) derruba o processo Node inteiro, afetando TODOS os jogadores conectados — sempre envolver lógica nova ali (e em `arena-persistence.mjs`) em try/catch, nunca deixar propagar.
 - Próximos passos possíveis (não pedidos ainda): temporadas com reset de nota, cosméticos por divisão/sequência, tema escuro no app inteiro (hoje só a partida é escura) e fonte de identidade própria.
 
+## Jogos e telas fora da Arena Rush (rodada de 14/09/2026)
+
+- **Jogos de alternativa** (`src/arcade/Round.tsx`): ao responder, a rodada segura por um instante (450ms acertando, 1500ms errando) mostrando ✓ na certa e ✗ na tocada, com a resposta e a `explanation` da rodada (que existia em `shared/arcade.mjs` e nunca chegava à tela). O cronômetro é adiado pelo mesmo tempo — o veredito não pode custar prova. Só no solo: online o servidor não manda gabarito.
+- **Memória**: erro mostra qual era o bloco certo e em que passo antes de encerrar. **Mira**: toques no vazio são contados e exibidos durante a prova (não pontuam — pontuação continua do servidor).
+- **Telas**: escolha de modo do jogo, topo da Arena, perfil, configurações (era "Som e música") e menu foram reorganizados em cartões; a lista de jogos mostra fase/estrelas por jogo (`readAllCampaigns`); a tela inicial tem "continuar de onde parou" (abre o jogo direto via `initialGame` em ArcadeScreen) e o cartel do duelo; o resultado da fase mostra meta com barra e "o que escapou".
+- Scripts de navegação (`check-arena-pvp.mjs`, `check-rush-polish.mjs`, `check-accessibility.mjs`) acompanham os rótulos novos ("Duelo" na barra, "Configurações" no menu).
+
 ## Capacidade de sala, personagem pseudo-3D e reconexão fora da Arena Rush (Tickets 27-46)
 
 - **Completa e commitada**. Três pedidos independentes do usuário: salas de arcade pra turma inteira (~30 pessoas, capacidade fixa em `shared/arcade.mjs`'s `ROOM_CAPACITIES`, usada por `server/rooms.mjs` e `src/arcade/BrowseView.tsx`); personagem/perfil com tratamento visual "pseudo-3D" (gradiente/sombra/brilho em `src/components/Character.tsx` + `shade()` em `src/theme.ts`, mesmo componente no editor, no perfil `src/live/PerfilTab.tsx` e nas salas); reconexão em todo o catálogo, não só a Arena Rush.
