@@ -20,6 +20,7 @@ import { createArenaRating } from "./arena-rating.mjs";
 import { createLatencyTracker } from "./arena-latency.mjs";
 import { RECONNECT_GRACE_MS } from "../shared/arena/reconnect.ts";
 import { levelForElapsed } from "../shared/arena/deck.ts";
+import { diffState } from "../shared/arena/statePatch.ts";
 
 const hash = (t) => createHash("sha256").update(t).digest("hex");
 const PATH = "/v1/arena-realtime";
@@ -44,6 +45,11 @@ const REMATCH_WINDOW_MS = 20000;
 // Convite direto: um código curto que vale por alguns minutos, pro caso de
 // combinar a partida por fora (mesma sala de aula, mensagem, o que for).
 const INVITE_TTL_MS = 5 * 60 * 1000;
+// De quantos em quantos tiques vai um retrato completo da partida em vez do
+// que mudou. Segura o acúmulo de arredondamento e conserta qualquer mensagem
+// perdida: ~2 segundos de intervalo, contra 15 envios completos por segundo
+// que existiam antes.
+const FULL_SYNC_EVERY = 30;
 
 export function attachArenaRealtime(server, db, clock = Date.now, options = {}) {
   const {
@@ -75,6 +81,8 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
   // combinar vitórias com um amigo seria a forma mais rápida de subir na
   // classificação.
   const friendlyMatches = new Set();
+  // Último retrato enviado de cada partida, pra calcular o que mudou.
+  const lastSent = new Map(); // matchId -> { state, ticks }
 
   function playerRow(uid) {
     return db.prepare("SELECT id,name,avatar FROM players WHERE id=?").get(uid);
@@ -172,6 +180,7 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
         friendly,
       });
     for (const uid of match.playerIds) activeMatchOf.delete(uid);
+    lastSent.delete(matchId);
     openRematchWindow(matchId, match.playerIds);
     matchSockets.delete(matchId);
     matches.endMatch(matchId);
@@ -279,7 +288,19 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
   }
 
   matches.on("tick", ({ matchId, state }) => {
-    broadcastToMatch(matchId, "state", { matchId, state });
+    // Antes: o estado inteiro (todas as tropas, posição e vida) ia pros dois
+    // sockets quinze vezes por segundo. Agora vai só o que mudou, com um
+    // retrato completo de vez em quando pra ninguém ficar à deriva.
+    const previous = lastSent.get(matchId);
+    if (!previous || previous.ticks >= FULL_SYNC_EVERY) {
+      lastSent.set(matchId, { state: structuredClone(state), ticks: 0 });
+      return broadcastToMatch(matchId, "state", { matchId, state });
+    }
+    previous.ticks++;
+    const patch = diffState(previous.state, state);
+    if (!patch) return; // nada mudou de visível: nem mensagem se manda
+    previous.state = structuredClone(state);
+    broadcastToMatch(matchId, "statePatch", { matchId, patch });
   });
   matches.on("matchOver", ({ matchId, state, winner, reason }) =>
     finishMatch(matchId, { state, winner, reason }),
@@ -658,6 +679,7 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
     rematches.clear();
     for (const { handle } of invites.values()) clearTimeout(handle);
     invites.clear();
+    lastSent.clear();
     latency.stop();
     server.removeListener("upgrade", onUpgrade);
     for (const sockets of socketsByPlayer.values())

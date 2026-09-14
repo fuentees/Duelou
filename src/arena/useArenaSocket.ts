@@ -3,6 +3,7 @@ import { WS_URL, getSessionToken } from "../api";
 import type { ArenaState, Side, TroopType } from "../../shared/arena/engine";
 import type { PublicArenaChallenge } from "./challenges";
 import { toViewerPerspective } from "./perspective";
+import { applyPatch, flipPatch } from "../../shared/arena/statePatch";
 import { RECONNECT_BACKOFF_MS, RECONNECT_GRACE_MS } from "../../shared/arena/reconnect";
 
 export type ArenaOpponent = { id: string; name: string; avatar: unknown };
@@ -99,6 +100,11 @@ export default function useArenaSocket(intent: ArenaIntent = { type: "queue" }) 
   const matchIdRef = useRef<string | null>(null);
   const challengeIdRef = useRef<string | null>(null);
   const opponentReconnectingRef = useRef(false);
+  // Último estado recebido, já na perspectiva de quem está vendo a tela. Os
+  // patches do servidor (ver shared/arena/statePatch.ts) são aplicados em
+  // cima dele — um retrato completo chega de tempos em tempos e realinha
+  // tudo, então nunca se acumula diferença por muito tempo.
+  const stateRef = useRef<ArenaState | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   // Referência estável de connect(), definida dentro do efeito — permite
   // reconectNow() (fora do efeito) disparar uma tentativa nova sem duplicar
@@ -197,6 +203,7 @@ export default function useArenaSocket(intent: ArenaIntent = { type: "queue" }) 
             lastMatchIdRef.current = msg.matchId;
             setInviteCode(null);
             setFriendly(!!msg.friendly);
+            stateRef.current = null;
             // Uma revanche é uma partida nova: limpa o campo, o placar e o
             // convite da anterior antes da revelação.
             setRematch("idle");
@@ -224,7 +231,11 @@ export default function useArenaSocket(intent: ArenaIntent = { type: "queue" }) 
             setMatchId(msg.matchId);
             setOpponent(msg.opponent);
             setOpponentReconnecting(false);
-            if (msg.state) setState(toViewerPerspective(msg.state, msg.you));
+            if (msg.state) {
+              const resumed = toViewerPerspective(msg.state, msg.you);
+              stateRef.current = resumed;
+              setState(resumed);
+            }
             setPhaseBoth("playing");
             break;
           case "challenge":
@@ -251,8 +262,25 @@ export default function useArenaSocket(intent: ArenaIntent = { type: "queue" }) 
             }
             break;
           case "state":
-            if (youRef.current) setState(toViewerPerspective(msg.state, youRef.current));
+            if (youRef.current) {
+              const fresh = toViewerPerspective(msg.state, youRef.current);
+              stateRef.current = fresh;
+              setState(fresh);
+            }
             break;
+          case "statePatch": {
+            const current = stateRef.current;
+            // Patch antes do primeiro retrato completo não tem em que ser
+            // aplicado — o próximo retrato (a cada ~2s) resolve.
+            if (!current || !youRef.current || !msg.patch) break;
+            const patched = applyPatch(
+              current,
+              youRef.current === "enemy" ? flipPatch(msg.patch) : msg.patch,
+            );
+            stateRef.current = patched;
+            setState(patched);
+            break;
+          }
           case "opponentDisconnected":
             opponentReconnectingRef.current = true;
             setOpponentReconnecting(true);
@@ -262,7 +290,11 @@ export default function useArenaSocket(intent: ArenaIntent = { type: "queue" }) 
             setOpponentReconnecting(false);
             break;
           case "matchOver":
-            if (youRef.current) setState(toViewerPerspective(msg.state, youRef.current));
+            if (youRef.current) {
+              const last = toViewerPerspective(msg.state, youRef.current);
+              stateRef.current = last;
+              setState(last);
+            }
             setWinner(msg.winner);
             setRatingDelta(msg.rating ?? null);
             // Se o adversário ainda estava com a reconexão pendente quando a
@@ -383,6 +415,7 @@ export default function useArenaSocket(intent: ArenaIntent = { type: "queue" }) 
   // Limpa tudo o que era da partida anterior antes de reconectar — senão a
   // próxima busca apareceria com o campo e o placar da partida que acabou.
   const playAgain = useCallback(() => {
+    stateRef.current = null;
     setState(null);
     setWinner(null);
     setChallenge(null);
