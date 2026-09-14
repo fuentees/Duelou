@@ -10,7 +10,7 @@ import ArenaOnlineScreen from "./ArenaOnlineScreen";
 import type { ArenaIntent } from "./useArenaSocket";
 import ArenaScreen from "./ArenaScreen";
 import { api } from "../api";
-import { gradients, palette } from "../theme";
+import { arenaTierFor, gradients, nextArenaTier, palette } from "../theme";
 
 type ArenaStats = {
   rating: number;
@@ -103,8 +103,17 @@ export default function ArenaLobby({
         <Card>
           <View style={s.statsHeader}>
             <View style={{ flex: 1, minWidth: 120 }}>
-              <Text style={s.statsLabel}>SUA NOTA NA ARENA</Text>
+              <Text style={s.statsLabel}>SUA DIVISÃO NA ARENA</Text>
+              <Text style={s.tier}>
+                {arenaTierFor(stats.rating).icon} {arenaTierFor(stats.rating).name}
+              </Text>
               <Text style={s.rating}>{stats.rating}</Text>
+              {!!nextArenaTier(stats.rating) && (
+                <Text style={s.note}>
+                  Faltam {nextArenaTier(stats.rating)!.missing} pontos para{" "}
+                  {nextArenaTier(stats.rating)!.tier.name}.
+                </Text>
+              )}
             </View>
             {stats.placement ? (
               <Text style={s.note}>
@@ -221,7 +230,8 @@ const s = StyleSheet.create({
   number: { fontSize: 18, fontWeight: "900", color: palette.violet },
   statsHeader: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8 },
   statsLabel: { fontSize: 10, fontWeight: "900", letterSpacing: 1, color: palette.textFaint },
-  rating: { fontSize: 34, fontWeight: "900", color: palette.text, fontVariant: ["tabular-nums"] },
+  tier: { fontSize: 22, fontWeight: "900", color: palette.text },
+  rating: { fontSize: 30, fontWeight: "900", color: palette.text, fontVariant: ["tabular-nums"] },
   record: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
   recordItem: { flexGrow: 1, minWidth: 64, gap: 2 },
   recordValue: { fontSize: 20, fontWeight: "900", color: palette.text, fontVariant: ["tabular-nums"] },

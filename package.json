@@ -15,6 +15,7 @@
     "typecheck": "tsc --noEmit",
     "api": "node --experimental-sqlite server/server.mjs",
     "test:api": "node --experimental-sqlite --test server/server.test.mjs server/rooms.test.mjs server/skillGames.test.mjs server/competitive.test.mjs server/continuation.test.mjs server/rate-limit.test.mjs server/operations.test.mjs server/battle.test.mjs server/arena-challenges.test.mjs server/arena-latency.test.mjs server/arena-match.test.mjs server/arena-persistence.test.mjs server/arena-rating.test.mjs server/arena-queue.test.mjs server/arena-ws.test.mjs",
+    "test:arena": "node --test shared/arena/*.test.mjs src/arena/*.test.mjs",
     "test:ui": "node --experimental-sqlite scripts/check-unified-games.mjs",
     "test:character": "node scripts/check-character.mjs",
     "test:character-mesh": "node --test shared/character3d.test.mjs",

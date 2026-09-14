@@ -3,7 +3,7 @@ import React, { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { api } from "../api";
-import { gradients, palette } from "../theme";
+import { arenaTierFor, gradients, palette } from "../theme";
 import SegmentedControl from "../components/SegmentedControl";
 import { s } from "./styles";
 
@@ -127,7 +127,9 @@ export default function RankingTab({
                   {i + 1}. {r.name}
                 </Text>
                 <View style={{ alignItems: "flex-end" }}>
-                  <Text style={s.heading}>{r.rating} pontos</Text>
+                  <Text style={s.heading}>
+                    {arenaTierFor(r.rating).icon} {r.rating} pontos
+                  </Text>
                   <Text style={[s.muted, { color: palette.textFaint }]}>
                     {r.wins}V · {r.losses}D
                     {r.bestStreak >= 3 ? ` · melhor sequência ${r.bestStreak}` : ""}

@@ -1,7 +1,7 @@
 import React from "react";
 import { Share, StyleSheet, Text, View } from "react-native";
 import Button from "../components/Button";
-import { palette, radius } from "../theme";
+import { arenaTierFor, palette, radius } from "../theme";
 import { ENEMY_COLOR, PLAYER_COLOR } from "./colors";
 import type { ArenaState } from "../../shared/arena/engine";
 import Character from "../components/Character";
@@ -89,7 +89,19 @@ export default function ResultCard({
         </View>
       ) : rating ? (
         <View style={s.ratingRow}>
-          <Text style={s.ratingLabel}>NOTA DA ARENA</Text>
+          {(() => {
+            const before = arenaTierFor(rating.before).name;
+            const after = arenaTierFor(rating.after);
+            // Trocar de divisão é o momento mais importante da tela — vale
+            // mais destaque que a variação de pontos em si.
+            if (before === after.name) return <Text style={s.ratingLabel}>NOTA DA ARENA</Text>;
+            return (
+              <Text style={s.tierChange}>
+                {after.icon}{" "}
+                {rating.delta > 0 ? `Subiu para ${after.name}!` : `Caiu para ${after.name}`}
+              </Text>
+            );
+          })()}
           <Text style={s.ratingValue}>
             {rating.after}{" "}
             <Text
@@ -181,6 +193,7 @@ const s = StyleSheet.create({
     backgroundColor: palette.surfaceAlt,
   },
   ratingLabel: { fontSize: 10, fontWeight: "900", letterSpacing: 1, color: palette.textFaint },
+  tierChange: { fontSize: 15, fontWeight: "900", color: palette.text, textAlign: "center" },
   ratingValue: {
     fontSize: 24,
     fontWeight: "900",
