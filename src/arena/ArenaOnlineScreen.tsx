@@ -256,6 +256,30 @@ export default function ArenaOnlineScreen({
               Seu adversário saiu da partida.
             </Text>
           )}
+          {/* Revanche: reencontra quem você acabou de enfrentar, sem voltar
+              pra fila e correr o risco de cair com outra pessoa. */}
+          <View style={s.rematchBox}>
+            {socket.rematch === "offered" && (
+              <Text style={s.rematchText} accessibilityLiveRegion="polite">
+                {socket.opponent?.name || "Seu adversário"} quer a revanche.
+              </Text>
+            )}
+            {socket.rematch === "waiting" && (
+              <Text style={s.rematchText} accessibilityLiveRegion="polite">
+                Revanche chamada — esperando a resposta.
+              </Text>
+            )}
+            {socket.rematch === "declined" && (
+              <Text style={s.rematchText} accessibilityLiveRegion="polite">
+                A revanche não rolou desta vez. Dá pra procurar outro adversário.
+              </Text>
+            )}
+            {socket.rematch !== "waiting" && socket.rematch !== "declined" && (
+              <Button onPress={socket.askRematch}>
+                {socket.rematch === "offered" ? "Aceitar revanche" : "Revanche"}
+              </Button>
+            )}
+          </View>
           <ResultCard
             state={state}
             showTutorialInfo={isFirstMatch}
@@ -463,6 +487,8 @@ const s = StyleSheet.create({
     textAlign: "center",
   },
   countdownHint: { fontSize: 13, color: arena.textDim, textAlign: "center" },
+  rematchBox: { alignSelf: "stretch", gap: 8, maxWidth: 420, width: "100%" },
+  rematchText: { fontSize: 14, fontWeight: "700", color: arena.text, textAlign: "center" },
   enemyCombo: { fontSize: 12, fontWeight: "900", color: ENEMY_COLOR },
   suddenDeath: {
     fontSize: 12,

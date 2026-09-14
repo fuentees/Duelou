@@ -37,6 +37,10 @@ const PING_INTERVAL_MS = 4000;
 // sem essa varredura, duas pessoas de notas distantes ficariam paradas pra
 // sempre só porque ninguém novo entrou depois delas.
 const QUEUE_SWEEP_MS = 2000;
+// Quanto tempo o convite de revanche fica de pé depois da partida. Curto de
+// propósito: é uma decisão tomada na tela de resultado, com o adversário
+// ainda ali — não uma caixa de entrada.
+const REMATCH_WINDOW_MS = 20000;
 
 export function attachArenaRealtime(server, db, clock = Date.now, options = {}) {
   const {
@@ -59,6 +63,10 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
   const activeMatchOf = new Map(); // uid -> matchId, só enquanto em partida/contagem
   const challengeOwner = new Map(); // challengeId -> { matchId, uid } (tamper guard)
   const disconnectTimers = new Map(); // uid -> { matchId, handle } (grace period pendente)
+  // Revanche: enquanto a janela está aberta, os dois jogadores da partida que
+  // acabou podem se reencontrar direto, sem passar pela fila (e sem correr o
+  // risco de cair com outra pessoa no meio).
+  const rematches = new Map(); // matchId -> { players, accepted:Set, handle }
 
   function playerRow(uid) {
     return db.prepare("SELECT id,name,avatar FROM players WHERE id=?").get(uid);
@@ -152,8 +160,61 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
         rating: deltas?.[uid] ?? null,
       });
     for (const uid of match.playerIds) activeMatchOf.delete(uid);
+    openRematchWindow(matchId, match.playerIds);
     matchSockets.delete(matchId);
     matches.endMatch(matchId);
+  }
+
+  /**
+   * Abre a janela de revanche da partida que acabou. Ninguém é avisado ainda:
+   * o convite só existe quando alguém toca em "Revanche" (handleRematch).
+   */
+  function openRematchWindow(matchId, playerIds) {
+    const handle = setTimeout(() => closeRematchWindow(matchId, "expirou"), REMATCH_WINDOW_MS);
+    handle.unref?.();
+    rematches.set(matchId, { players: [...playerIds], accepted: new Set(), handle });
+  }
+
+  function closeRematchWindow(matchId, reason) {
+    const entry = rematches.get(matchId);
+    if (!entry) return;
+    clearTimeout(entry.handle);
+    rematches.delete(matchId);
+    // Só quem tinha aceitado precisa saber que não vai acontecer — quem não
+    // respondeu já seguiu a vida.
+    for (const uid of entry.accepted)
+      for (const ws of socketsByPlayer.get(uid) ?? [])
+        send(ws, "rematchDeclined", { matchId, reason });
+  }
+
+  function handleRematch(ws, uid, msg) {
+    limitRequest(`arena_rematch:${uid}`, 30);
+    const matchId = msg?.matchId;
+    const entry = typeof matchId === "string" ? rematches.get(matchId) : null;
+    if (!entry || !entry.players.includes(uid))
+      return send(ws, "error", { message: "A revanche dessa partida não está mais disponível." });
+    if (activeMatchOf.has(uid))
+      return send(ws, "error", { message: "Você já está em uma partida." });
+
+    entry.accepted.add(uid);
+    const opponentUid = entry.players.find((id) => id !== uid);
+    if (!entry.accepted.has(opponentUid)) {
+      // Primeiro a aceitar: fica esperando e o outro lado recebe o convite.
+      send(ws, "rematchPending", { matchId, expiresAt: clock() + REMATCH_WINDOW_MS });
+      for (const opponentWs of socketsByPlayer.get(opponentUid) ?? [])
+        send(opponentWs, "rematchRequested", { matchId, expiresAt: clock() + REMATCH_WINDOW_MS });
+      return;
+    }
+
+    // Os dois toparam. Se um deles sumiu no meio do caminho, avisa em vez de
+    // criar uma partida contra ninguém.
+    clearTimeout(entry.handle);
+    rematches.delete(matchId);
+    if (!socketsByPlayer.get(opponentUid)?.size || activeMatchOf.has(opponentUid))
+      return send(ws, "rematchDeclined", { matchId, reason: "saiu" });
+    queue.leave(uid);
+    queue.leave(opponentUid);
+    startMatch(opponentUid, uid);
   }
 
   matches.on("tick", ({ matchId, state }) => {
@@ -359,6 +420,8 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
         return queue.leave(uid);
       case "answer":
         return handleAnswer(ws, uid, msg);
+      case "rematch":
+        return handleRematch(ws, uid, msg);
       case "useCombo":
         return handleUseCombo(ws, uid, msg);
       case "forfeit":
@@ -459,7 +522,11 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
       }
 
       queue.leave(uid);
-      if (!remaining?.size) latency.forget(uid);
+      if (!remaining?.size) {
+        latency.forget(uid);
+        for (const [matchId, entry] of rematches)
+          if (entry.players.includes(uid)) closeRematchWindow(matchId, "saiu");
+      }
       try {
         handleDisconnect(uid);
       } catch (e) {
@@ -516,6 +583,8 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
   function stop() {
     clearInterval(pingTimer);
     clearInterval(sweepTimer);
+    for (const { handle } of rematches.values()) clearTimeout(handle);
+    rematches.clear();
     latency.stop();
     server.removeListener("upgrade", onUpgrade);
     for (const sockets of socketsByPlayer.values())

@@ -394,3 +394,86 @@ test("conta excluída (DELETE /v1/me) em partida ativa não derruba o servidor p
     wsB.close();
   });
 });
+
+test("revanche: os dois topam e voltam direto pra uma partida nova, sem passar pela fila", async () => {
+  await withServer(async ({ call, wsBase }) => {
+    const a = (await call("/v1/guests", null, { name: "Alice" })).data;
+    const b = (await call("/v1/guests", null, { name: "Bob" })).data;
+    const wsA = connect(wsBase, a.token);
+    const wsB = connect(wsBase, b.token);
+    await Promise.all([
+      new Promise((r) => wsA.once("open", r)),
+      new Promise((r) => wsB.once("open", r)),
+    ]);
+    const msgsA = collect(wsA);
+    const msgsB = collect(wsB);
+    wsA.send(JSON.stringify({ type: "queue" }));
+    await new Promise((r) => setTimeout(r, 80));
+    wsB.send(JSON.stringify({ type: "queue" }));
+    const found = await waitFor(msgsA, "matchFound");
+
+    wsA.send(JSON.stringify({ type: "forfeit", matchId: found.matchId }));
+    await waitFor(msgsA, "matchOver");
+    await waitFor(msgsB, "matchOver");
+
+    // Alice chama a revanche: ela espera, Bob recebe o convite.
+    msgsA.length = 0;
+    msgsB.length = 0;
+    wsA.send(JSON.stringify({ type: "rematch", matchId: found.matchId }));
+    await waitFor(msgsA, "rematchPending");
+    const invite = await waitFor(msgsB, "rematchRequested");
+    assert.equal(invite.matchId, found.matchId);
+
+    wsB.send(JSON.stringify({ type: "rematch", matchId: found.matchId }));
+    const again = await waitFor(msgsA, "matchFound");
+    const alsoAgain = await waitFor(msgsB, "matchFound");
+    assert.notEqual(again.matchId, found.matchId, "revanche é uma partida nova");
+    assert.equal(again.matchId, alsoAgain.matchId, "os dois na mesma partida");
+    assert.equal(again.opponent.name, "Bob");
+    assert.equal(alsoAgain.opponent.name, "Alice");
+
+    wsA.close();
+    wsB.close();
+  });
+});
+
+test("revanche: quem aceitou sozinho é avisado quando o adversário sai", async () => {
+  await withServer(async ({ call, wsBase }) => {
+    const a = (await call("/v1/guests", null, { name: "Alice" })).data;
+    const b = (await call("/v1/guests", null, { name: "Bob" })).data;
+    const wsA = connect(wsBase, a.token);
+    const wsB = connect(wsBase, b.token);
+    await Promise.all([
+      new Promise((r) => wsA.once("open", r)),
+      new Promise((r) => wsB.once("open", r)),
+    ]);
+    const msgsA = collect(wsA);
+    wsA.send(JSON.stringify({ type: "queue" }));
+    await new Promise((r) => setTimeout(r, 80));
+    wsB.send(JSON.stringify({ type: "queue" }));
+    const found = await waitFor(msgsA, "matchFound");
+    wsA.send(JSON.stringify({ type: "forfeit", matchId: found.matchId }));
+    await waitFor(msgsA, "matchOver");
+
+    wsA.send(JSON.stringify({ type: "rematch", matchId: found.matchId }));
+    await waitFor(msgsA, "rematchPending");
+    wsB.close(); // Bob fecha a aba em vez de responder
+    const declined = await waitFor(msgsA, "rematchDeclined");
+    assert.equal(declined.reason, "saiu");
+
+    wsA.close();
+  });
+});
+
+test("revanche de partida que não é sua (ou já encerrada) é recusada com erro claro", async () => {
+  await withServer(async ({ call, wsBase }) => {
+    const a = (await call("/v1/guests", null, { name: "Alice" })).data;
+    const wsA = connect(wsBase, a.token);
+    await new Promise((r) => wsA.once("open", r));
+    const msgsA = collect(wsA);
+    wsA.send(JSON.stringify({ type: "rematch", matchId: "partida-que-nunca-existiu" }));
+    const error = await waitFor(msgsA, "error");
+    assert.match(error.message, /revanche/i);
+    wsA.close();
+  });
+});

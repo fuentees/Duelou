@@ -17,6 +17,11 @@ export type ArenaSocketPhase =
 export type AnswerSubmission = { index: number } | { tapped: true };
 // Quanto a nota da Arena mudou nessa partida (server/arena-rating.mjs).
 export type ArenaRatingDelta = { before: number; after: number; delta: number };
+// Estado do convite de revanche, na tela de resultado:
+// "offered" = o adversário chamou e está esperando você;
+// "waiting" = você chamou e está esperando ele;
+// "declined" = não vai rolar (ele saiu ou o prazo acabou).
+export type ArenaRematchState = "idle" | "offered" | "waiting" | "declined";
 export type ArenaAnswerFeedback = {
   seq: number;
   correct: boolean;
@@ -70,6 +75,8 @@ export default function useArenaSocket() {
   // Instante local (não o do servidor, que o cliente não tem) em que a
   // partida começa — a tela de revelação conta até lá.
   const [countdownEndsAt, setCountdownEndsAt] = useState<number | null>(null);
+  const [rematch, setRematch] = useState<ArenaRematchState>("idle");
+  const lastMatchIdRef = useRef<string | null>(null);
   const answerSeqRef = useRef(0);
 
   // Espelham o estado mais recente pra uso dentro de closures que não são
@@ -163,6 +170,15 @@ export default function useArenaSocket() {
           case "matchFound":
             youRef.current = msg.you;
             matchIdRef.current = msg.matchId;
+            lastMatchIdRef.current = msg.matchId;
+            // Uma revanche é uma partida nova: limpa o campo, o placar e o
+            // convite da anterior antes da revelação.
+            setRematch("idle");
+            setState(null);
+            setWinner(null);
+            setRatingDelta(null);
+            setOpponentLeft(false);
+            setChallenge(null);
             setYou(msg.you);
             setMatchId(msg.matchId);
             setMe(msg.me);
@@ -230,6 +246,15 @@ export default function useArenaSocket() {
             if (opponentReconnectingRef.current) setOpponentLeft(true);
             setPhaseBoth("ended");
             break;
+          case "rematchPending":
+            setRematch("waiting");
+            break;
+          case "rematchRequested":
+            setRematch("offered");
+            break;
+          case "rematchDeclined":
+            setRematch("declined");
+            break;
           case "comboSpent":
             setLastAnswer({
               seq: ++answerSeqRef.current,
@@ -288,6 +313,15 @@ export default function useArenaSocket() {
       ws.send(JSON.stringify({ type: "useCombo", matchId: matchIdRef.current }));
   }, []);
 
+  // "Revanche" na tela de resultado: reencontra o mesmo adversário sem passar
+  // pela fila. Vale nota igual a qualquer partida — é uma partida de verdade.
+  const askRematch = useCallback(() => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== ws.OPEN || !lastMatchIdRef.current) return;
+    setRematch("waiting");
+    ws.send(JSON.stringify({ type: "rematch", matchId: lastMatchIdRef.current }));
+  }, []);
+
   const leaveQueue = useCallback(() => {
     const ws = wsRef.current;
     if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: "leaveQueue" }));
@@ -325,6 +359,7 @@ export default function useArenaSocket() {
     setReflexGo(false);
     setLastAnswer(null);
     setRatingDelta(null);
+    setRematch("idle");
     setOpponent(null);
     setOpponentLeft(false);
     setOpponentReconnecting(false);
@@ -356,6 +391,8 @@ export default function useArenaSocket() {
     rttMs,
     countdownEndsAt,
     lastAnswer,
+    rematch,
+    askRematch,
     ratingDelta,
     submitAnswer,
     forfeit,
