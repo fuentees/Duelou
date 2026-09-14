@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import Character from "../components/Character";
@@ -7,6 +7,7 @@ import Button from "../components/Button";
 import Card from "../components/Card";
 import BottomNav, { Section } from "../components/BottomNav";
 import ArenaOnlineScreen from "./ArenaOnlineScreen";
+import type { ArenaIntent } from "./useArenaSocket";
 import ArenaScreen from "./ArenaScreen";
 import { api } from "../api";
 import { gradients, palette } from "../theme";
@@ -27,6 +28,7 @@ type ArenaHistoryRow = {
   id: string;
   opponent: string;
   outcome: "win" | "loss" | "draw";
+  friendly: boolean;
   myBaseHp: number;
   theirBaseHp: number;
 };
@@ -43,8 +45,11 @@ export default function ArenaLobby({
   // único botão de voltar.
   onNavigate?: (section: Section) => void;
 }) {
-  const [playing, setPlaying] = useState(false);
+  // null = no lobby; senão é a intenção com que a partida foi aberta.
+  const [intent, setIntent] = useState<ArenaIntent | null>(null);
   const [training, setTraining] = useState(false);
+  const [code, setCode] = useState("");
+  const playing = intent !== null;
   const [stats, setStats] = useState<ArenaStats | null>(null);
   const [history, setHistory] = useState<ArenaHistoryRow[]>([]);
   // Recarrega ao voltar de uma partida (playing volta a false): a nota e o
@@ -67,12 +72,13 @@ export default function ArenaLobby({
     };
   }, [playing, training]);
   if (training) return <ArenaScreen onExit={() => setTraining(false)} />;
-  if (playing)
+  if (intent)
     return (
       <ArenaOnlineScreen
-        onExit={() => setPlaying(false)}
+        intent={intent}
+        onExit={() => setIntent(null)}
         onTrainWithBot={() => {
-          setPlaying(false);
+          setIntent(null);
           setTraining(true);
         }}
       />
@@ -138,6 +144,7 @@ export default function ArenaLobby({
                   </Text>
                   <Text style={[s.note, { flex: 1, minWidth: 80 }]} numberOfLines={1}>
                     vs {h.opponent}
+                    {h.friendly ? " · amistoso" : ""}
                   </Text>
                   <Text style={s.historyScore}>
                     {Math.round(h.myBaseHp)} × {Math.round(h.theirBaseHp)}
@@ -148,8 +155,39 @@ export default function ArenaLobby({
           )}
         </Card>
       )}
-      <Button onPress={() => setPlaying(true)}>Buscar adversário</Button>
+      <Button onPress={() => setIntent({ type: "queue" })}>Buscar adversário</Button>
       <Text style={s.note}>A busca começa ao tocar no botão. Você pode cancelar enquanto espera.</Text>
+      <Card>
+        <Text style={s.heading}>Duelar com quem você já conhece</Text>
+        <Text style={s.note}>
+          Crie um convite e passe o código, ou entre no código de alguém. Amistoso
+          entra no seu histórico, mas não altera a nota de ninguém.
+        </Text>
+        <Button secondary onPress={() => setIntent({ type: "host" })}>
+          Criar convite
+        </Button>
+        <View style={s.codeRow}>
+          <TextInput
+            value={code}
+            onChangeText={(text) => setCode(text.replace(/[^0-9A-Fa-f]/g, "").slice(0, 6).toUpperCase())}
+            placeholder="CÓDIGO"
+            placeholderTextColor={palette.textFaint}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            accessibilityLabel="Código do convite"
+            style={s.codeInput}
+          />
+          <View style={{ flex: 1, minWidth: 140 }}>
+            <Button
+              secondary
+              disabled={code.length < 6}
+              onPress={() => setIntent({ type: "join", code })}
+            >
+              Entrar no duelo
+            </Button>
+          </View>
+        </View>
+      </Card>
       <Card>
         <Text style={s.heading}>Seu primeiro duelo, sem mistério</Text>
         {[
@@ -190,4 +228,18 @@ const s = StyleSheet.create({
   historyRow: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
   historyOutcome: { fontSize: 13, fontWeight: "900", minWidth: 68 },
   historyScore: { fontSize: 13, fontWeight: "800", color: palette.textDim, fontVariant: ["tabular-nums"] },
+  codeRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 10 },
+  codeInput: {
+    minHeight: 48,
+    minWidth: 130,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surfaceAlt,
+    color: palette.text,
+    fontSize: 20,
+    fontWeight: "800",
+    letterSpacing: 3,
+  },
 });

@@ -477,3 +477,67 @@ test("revanche de partida que não é sua (ou já encerrada) é recusada com err
     wsA.close();
   });
 });
+
+test("convite direto: código junta os dois sem fila, e a partida amistosa não mexe na nota", async () => {
+  await withServer(async ({ app, call, wsBase }) => {
+    const a = (await call("/v1/guests", null, { name: "Alice" })).data;
+    const b = (await call("/v1/guests", null, { name: "Bob" })).data;
+    const wsA = connect(wsBase, a.token);
+    const wsB = connect(wsBase, b.token);
+    await Promise.all([
+      new Promise((r) => wsA.once("open", r)),
+      new Promise((r) => wsB.once("open", r)),
+    ]);
+    const msgsA = collect(wsA);
+    const msgsB = collect(wsB);
+
+    wsA.send(JSON.stringify({ type: "createInvite" }));
+    const invite = await waitFor(msgsA, "inviteCreated");
+    assert.match(invite.code, /^[0-9A-F]{6}$/);
+
+    // Código em minúsculas e com espaço, como alguém digitaria de verdade.
+    wsB.send(JSON.stringify({ type: "joinInvite", code: ` ${invite.code.toLowerCase()} ` }));
+    const foundA = await waitFor(msgsA, "matchFound");
+    const foundB = await waitFor(msgsB, "matchFound");
+    assert.equal(foundA.matchId, foundB.matchId);
+    assert.equal(foundA.friendly, true, "partida por convite é amistosa");
+    assert.equal(foundA.opponent.name, "Bob");
+
+    wsA.send(JSON.stringify({ type: "forfeit", matchId: foundA.matchId }));
+    const over = await waitFor(msgsA, "matchOver");
+    assert.equal(over.friendly, true);
+    assert.equal(over.rating, null, "amistoso não pode mexer na nota");
+
+    const ficha = await call("/v1/arena/me", a.token);
+    assert.equal(ficha.data.matches, 0, "amistoso não entra no cartel");
+    assert.equal(ficha.data.rating, 1000);
+
+    const historico = await call("/v1/arena/history", a.token);
+    assert.equal(historico.data.length, 1, "mas entra no histórico");
+    assert.equal(historico.data[0].friendly, true);
+
+    wsA.close();
+    wsB.close();
+  });
+});
+
+test("convite: código inválido, código próprio e convite já usado dão erro claro", async () => {
+  await withServer(async ({ call, wsBase }) => {
+    const a = (await call("/v1/guests", null, { name: "Alice" })).data;
+    const wsA = connect(wsBase, a.token);
+    await new Promise((r) => wsA.once("open", r));
+    const msgsA = collect(wsA);
+
+    wsA.send(JSON.stringify({ type: "joinInvite", code: "ZZZZZZ" }));
+    assert.match((await waitFor(msgsA, "error")).message, /não encontrado/i);
+
+    msgsA.length = 0;
+    wsA.send(JSON.stringify({ type: "createInvite" }));
+    const invite = await waitFor(msgsA, "inviteCreated");
+    msgsA.length = 0;
+    wsA.send(JSON.stringify({ type: "joinInvite", code: invite.code }));
+    assert.match((await waitFor(msgsA, "error")).message, /seu/i);
+
+    wsA.close();
+  });
+});

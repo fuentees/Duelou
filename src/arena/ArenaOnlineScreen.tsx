@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import useArenaSocket from "./useArenaSocket";
+import useArenaSocket, { ArenaIntent } from "./useArenaSocket";
 import MatchmakingScreen from "./MatchmakingScreen";
 import ChallengePanel from "./ChallengePanel";
 import HealthBar from "./HealthBar";
@@ -50,11 +50,14 @@ type Poof = { key: number; position: number; side: Side };
 export default function ArenaOnlineScreen({
   onExit,
   onTrainWithBot,
+  intent = { type: "queue" },
 }: {
   onExit?: () => void;
   onTrainWithBot?: () => void;
+  // Fila normal, criando convite pra um amigo ou entrando num código.
+  intent?: ArenaIntent;
 }) {
-  const socket = useArenaSocket();
+  const socket = useArenaSocket(intent);
   const reducedMotion = useReducedMotion();
   const [laneHeight, setLaneHeight] = useState(0);
   const [poofs, setPoofs] = useState<Poof[]>([]);
@@ -175,16 +178,21 @@ export default function ArenaOnlineScreen({
       <MatchmakingScreen
         status={socket.phase}
         onCancel={handleExit}
+        inviteCode={socket.inviteCode}
+        waitingForFriend={intent.type !== "queue"}
         onTrainWithBot={
-          onTrainWithBot &&
-          (() => {
-            // Sai da fila antes de ir treinar: ficar na fila enquanto joga
-            // contra o robô faria o adversário de verdade cair numa partida
-            // sem ninguém do outro lado.
-            socket.leaveQueue();
-            socket.disconnect();
-            onTrainWithBot();
-          })
+          intent.type !== "queue"
+            ? undefined
+            : 
+              onTrainWithBot &&
+              (() => {
+                // Sai da fila antes de ir treinar: ficar na fila enquanto joga
+                // contra o robô faria o adversário de verdade cair numa partida
+                // sem ninguém do outro lado.
+                socket.leaveQueue();
+                socket.disconnect();
+                onTrainWithBot();
+              })
         }
       />
     );
@@ -250,7 +258,11 @@ export default function ArenaOnlineScreen({
   if (socket.phase === "ended" && state) {
     return (
       <SafeAreaView style={s.screen}>
-        <ScrollView contentContainerStyle={[s.center, { flex: undefined, flexGrow: 1 }]}>
+        {/* Sem centralizar na vertical: o conteúdo do resultado é mais alto
+            que a tela, e um container centralizado que transborda corta o
+            topo — era o que escondia a revanche e deixava o começo do card
+            fora de alcance, sem rolagem que chegasse lá. */}
+        <ScrollView contentContainerStyle={s.endedContent}>
           {socket.opponentLeft && (
             <Text style={s.opponentLeft} accessibilityLiveRegion="polite">
               Seu adversário saiu da partida.
@@ -284,6 +296,7 @@ export default function ArenaOnlineScreen({
             state={state}
             showTutorialInfo={isFirstMatch}
             rating={socket.ratingDelta}
+            friendly={socket.friendly}
             avatar={socket.me?.avatar}
             playerName={socket.me?.name}
             comeback={state.winner === "player" && wasCriticalRef.current}
@@ -473,6 +486,7 @@ export default function ArenaOnlineScreen({
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: arena.bg },
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 16, padding: 24 },
+  endedContent: { alignItems: "center", gap: 16, padding: 24, paddingBottom: 40, flexGrow: 1 },
   match: { flex: 1, padding: 12, gap: 8, width: "100%", maxWidth: 660, alignSelf: "center" },
   row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   opponentNameRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", flex: 1, minWidth: 0, gap: 8 },
@@ -529,9 +543,12 @@ const s = StyleSheet.create({
   },
   lane: {
     flex: 1,
-    // Em tela pequena, sem piso a pista virava uma faixa fina entre as barras
-    // de vida e o painel de resposta — e é nela que a partida acontece.
-    minHeight: 200,
+    // Piso pra pista não virar uma faixa fina entre as barras de vida e o
+    // painel — mas com flexShrink, senão numa tela baixa a soma das alturas
+    // mínimas empurra o "Desistir" pra fora da tela (era o que acontecia
+    // depois que o botão de combo entrou).
+    minHeight: 150,
+    flexShrink: 1,
     backgroundColor: arena.surface,
     borderRadius: radius.md,
     borderWidth: 1,
@@ -548,11 +565,12 @@ const s = StyleSheet.create({
     borderColor: arena.border,
     // Altura mínima pro painel não "pular" entre um desafio de escolha (com
     // enunciado e quatro alternativas) e um de reflexo (um botão só).
-    minHeight: 190,
+    minHeight: 172,
+    flexShrink: 0,
     justifyContent: "center",
   },
   comboButton: {
-    minHeight: 48,
+    minHeight: 44,
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: arena.border,
@@ -564,6 +582,6 @@ const s = StyleSheet.create({
   comboButtonReady: { backgroundColor: arena.warn, borderColor: arena.warn },
   comboButtonText: { fontSize: 13, fontWeight: "800", color: arena.textFaint, textAlign: "center" },
   comboButtonTextReady: { color: "#2A1D00", fontWeight: "900" },
-  forfeit: { alignSelf: "center", minHeight: 44, minWidth: 96, justifyContent: "center" },
+  forfeit: { alignSelf: "center", minHeight: 44, minWidth: 96, justifyContent: "center", flexShrink: 0 },
   forfeitText: { color: arena.textFaint, fontWeight: "800", fontSize: 13, textAlign: "center" },
 });

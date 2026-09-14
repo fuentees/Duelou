@@ -162,7 +162,7 @@ export function createArenaRating(db, clock = Date.now) {
   function historyFor(uid, limit = 20) {
     return db
       .prepare(
-        `SELECT m.id, m.created, m.winner, m.reason, m.duration_seconds durationSeconds,
+        `SELECT m.id, m.created, m.winner, m.reason, m.friendly, m.duration_seconds durationSeconds,
                 m.player_a playerA, m.final_player_hp finalPlayerHp, m.final_enemy_hp finalEnemyHp,
                 pa.name nameA, pb.name nameB, m.player_b playerB
            FROM arena_matches m
@@ -180,6 +180,7 @@ export function createArenaRating(db, clock = Date.now) {
           opponent: (iAmA ? m.nameB : m.nameA) ?? "Jogador removido",
           outcome: m.winner === null ? "draw" : m.winner === uid ? "win" : "loss",
           reason: m.reason,
+          friendly: !!m.friendly,
           durationSeconds: m.durationSeconds,
           myBaseHp: iAmA ? m.finalPlayerHp : m.finalEnemyHp,
           theirBaseHp: iAmA ? m.finalEnemyHp : m.finalPlayerHp,

@@ -20,6 +20,7 @@ export default function ResultCard({
   avatar,
   playerName,
   rating,
+  friendly = false,
 }: {
   state: ArenaState;
   // Se a própria base do jogador chegou a ficar crítica em algum momento e
@@ -37,6 +38,8 @@ export default function ResultCard({
   // Nota da Arena depois desta partida. Ausente no modo contra o robô, que
   // não vale classificação — e a tela diz isso, em vez de ficar ambígua.
   rating?: { before: number; after: number; delta: number } | null;
+  // Partida por convite direto: conta no histórico, não na nota.
+  friendly?: boolean;
 }) {
   // Sempre a perspectiva de quem está vendo a tela — em PvP, o cliente já
   // recebe o estado invertido pra "player" ser sempre "eu" (ver Ticket 21).
@@ -79,7 +82,12 @@ export default function ResultCard({
       <Text style={[s.outcome, won && s.outcomeWon]}>{outcome}</Text>
       <Text style={s.highlight}>{highlight}</Text>
       </LinearGradient>
-      {rating ? (
+      {friendly ? (
+        <View style={s.ratingRow}>
+          <Text style={s.ratingLabel}>AMISTOSO</Text>
+          <Text style={s.highlight}>Partida por convite — não altera sua nota.</Text>
+        </View>
+      ) : rating ? (
         <View style={s.ratingRow}>
           <Text style={s.ratingLabel}>NOTA DA ARENA</Text>
           <Text style={s.ratingValue}>

@@ -9,7 +9,7 @@
 // inteiramente independentes (ver arena-queue.mjs e arena-persistence.mjs).
 
 import { WebSocketServer } from "ws";
-import { randomUUID, createHash } from "node:crypto";
+import { randomUUID, createHash, randomBytes } from "node:crypto";
 import { readAvatar } from "../shared/avatar.mjs";
 import { rateLimiter } from "./rate-limit.mjs";
 import { createArenaChallenges } from "./arena-challenges.mjs";
@@ -41,6 +41,9 @@ const QUEUE_SWEEP_MS = 2000;
 // propósito: é uma decisão tomada na tela de resultado, com o adversário
 // ainda ali — não uma caixa de entrada.
 const REMATCH_WINDOW_MS = 20000;
+// Convite direto: um código curto que vale por alguns minutos, pro caso de
+// combinar a partida por fora (mesma sala de aula, mensagem, o que for).
+const INVITE_TTL_MS = 5 * 60 * 1000;
 
 export function attachArenaRealtime(server, db, clock = Date.now, options = {}) {
   const {
@@ -67,6 +70,11 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
   // acabou podem se reencontrar direto, sem passar pela fila (e sem correr o
   // risco de cair com outra pessoa no meio).
   const rematches = new Map(); // matchId -> { players, accepted:Set, handle }
+  const invites = new Map(); // código -> { host, handle }
+  // Partidas por convite: valem histórico, mas não mexem na nota — senão
+  // combinar vitórias com um amigo seria a forma mais rápida de subir na
+  // classificação.
+  const friendlyMatches = new Set();
 
   function playerRow(uid) {
     return db.prepare("SELECT id,name,avatar FROM players WHERE id=?").get(uid);
@@ -121,6 +129,7 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
     }
     const [playerAId, playerBId] = match.playerIds;
     const winnerUid = winner === "player" ? playerAId : winner === "enemy" ? playerBId : null;
+    const friendly = friendlyMatches.delete(matchId);
     persistence.recordMatch({
       matchId,
       playerA: playerAId,
@@ -130,6 +139,7 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
       finalPlayerHp: state.playerBaseHp,
       finalEnemyHp: state.enemyBaseHp,
       reason,
+      friendly,
     });
     // Classificação da Arena (tabela própria — nada de Elo competitivo, ver
     // server/arena-rating.mjs). Em try/catch como todo o resto daqui: uma
@@ -137,15 +147,16 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
     // ele, a partida de todo mundo que está conectado.
     let deltas = null;
     try {
-      deltas = rating.applyResult({
-        playerA: playerAId,
-        playerB: playerBId,
-        winner: winnerUid,
-        combos: {
-          [playerAId]: state.stats.player.maxCombo,
-          [playerBId]: state.stats.enemy.maxCombo,
-        },
-      });
+      if (!friendly)
+        deltas = rating.applyResult({
+          playerA: playerAId,
+          playerB: playerBId,
+          winner: winnerUid,
+          combos: {
+            [playerAId]: state.stats.player.maxCombo,
+            [playerBId]: state.stats.enemy.maxCombo,
+          },
+        });
     } catch (e) {
       console.warn(
         JSON.stringify({ event: "arena_rating_failed", matchId, error: e?.message }),
@@ -158,6 +169,7 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
         winner,
         state,
         rating: deltas?.[uid] ?? null,
+        friendly,
       });
     for (const uid of match.playerIds) activeMatchOf.delete(uid);
     openRematchWindow(matchId, match.playerIds);
@@ -185,6 +197,55 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
     for (const uid of entry.accepted)
       for (const ws of socketsByPlayer.get(uid) ?? [])
         send(ws, "rematchDeclined", { matchId, reason });
+  }
+
+  /**
+   * Cria um convite direto: um código curto que o jogador passa pra quem ele
+   * quiser (mesma sala de aula, mensagem, o que for). Enquanto o convite está
+   * de pé, quem criou fica esperando — fora da fila, pra não ser pareado com
+   * um desconhecido no meio do caminho.
+   */
+  function handleCreateInvite(ws, uid) {
+    limitRequest(`arena_invite:${uid}`, 20);
+    if (activeMatchOf.has(uid))
+      return send(ws, "error", { message: "Você já está em uma partida." });
+    cancelInvitesOf(uid);
+    queue.leave(uid);
+    const code = randomBytes(3).toString("hex").toUpperCase();
+    const handle = setTimeout(() => {
+      invites.delete(code);
+      for (const hostWs of socketsByPlayer.get(uid) ?? [])
+        send(hostWs, "inviteExpired", { code });
+    }, INVITE_TTL_MS);
+    handle.unref?.();
+    invites.set(code, { host: uid, handle });
+    send(ws, "inviteCreated", { code, expiresAt: clock() + INVITE_TTL_MS });
+  }
+
+  function cancelInvitesOf(uid) {
+    for (const [code, invite] of invites) {
+      if (invite.host !== uid) continue;
+      clearTimeout(invite.handle);
+      invites.delete(code);
+    }
+  }
+
+  function handleJoinInvite(ws, uid, msg) {
+    limitRequest(`arena_invite:${uid}`, 20);
+    const code = typeof msg?.code === "string" ? msg.code.trim().toUpperCase() : "";
+    const invite = invites.get(code);
+    if (!invite) return send(ws, "error", { message: "Código não encontrado ou já usado." });
+    if (invite.host === uid)
+      return send(ws, "error", { message: "Esse convite é seu — mande o código pra outra pessoa." });
+    if (activeMatchOf.has(uid) || activeMatchOf.has(invite.host))
+      return send(ws, "error", { message: "Quem convidou já está em outra partida." });
+    if (!socketsByPlayer.get(invite.host)?.size)
+      return send(ws, "error", { message: "Quem convidou não está mais conectado." });
+    clearTimeout(invite.handle);
+    invites.delete(code);
+    queue.leave(uid);
+    queue.leave(invite.host);
+    startMatch(invite.host, uid, { friendly: true });
   }
 
   function handleRematch(ws, uid, msg) {
@@ -224,8 +285,9 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
     finishMatch(matchId, { state, winner, reason }),
   );
 
-  function startMatch(uidA, uidB) {
+  function startMatch(uidA, uidB, { friendly = false } = {}) {
     const matchId = randomUUID();
+    if (friendly) friendlyMatches.add(matchId);
     const startsAt = clock() + countdownMs;
     matches.createMatch(matchId, uidA, uidB, startsAt);
     activeMatchOf.set(uidA, matchId);
@@ -254,6 +316,7 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
       opponent: meB,
       startsAt,
       countdownMs,
+      friendly,
     });
     send(sockets.get(uidB), "matchFound", {
       matchId,
@@ -262,6 +325,7 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
       opponent: meA,
       startsAt,
       countdownMs,
+      friendly,
     });
     setTimeout(() => {
       issueNextChallenge(matchId, uidA);
@@ -420,6 +484,12 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
         return queue.leave(uid);
       case "answer":
         return handleAnswer(ws, uid, msg);
+      case "createInvite":
+        return handleCreateInvite(ws, uid);
+      case "joinInvite":
+        return handleJoinInvite(ws, uid, msg);
+      case "cancelInvite":
+        return cancelInvitesOf(uid);
       case "rematch":
         return handleRematch(ws, uid, msg);
       case "useCombo":
@@ -524,6 +594,7 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
       queue.leave(uid);
       if (!remaining?.size) {
         latency.forget(uid);
+        cancelInvitesOf(uid);
         for (const [matchId, entry] of rematches)
           if (entry.players.includes(uid)) closeRematchWindow(matchId, "saiu");
       }
@@ -585,6 +656,8 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
     clearInterval(sweepTimer);
     for (const { handle } of rematches.values()) clearTimeout(handle);
     rematches.clear();
+    for (const { handle } of invites.values()) clearTimeout(handle);
+    invites.clear();
     latency.stop();
     server.removeListener("upgrade", onUpgrade);
     for (const sockets of socketsByPlayer.values())

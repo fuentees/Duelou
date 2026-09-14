@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Animated, StyleSheet, Text, View } from "react-native";
+import { Animated, Share, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Button from "../components/Button";
 import LiveStatus from "../components/LiveStatus";
@@ -17,11 +17,16 @@ export default function MatchmakingScreen({
   onCancel,
   onRetry,
   onTrainWithBot,
+  inviteCode,
+  waitingForFriend = false,
 }: {
   status: "connecting" | "queued" | "reconnecting" | "error";
   errorMessage?: string;
   onCancel: () => void;
   onRetry?: () => void;
+  // Código do convite direto, quando esta espera é por um amigo específico.
+  inviteCode?: string | null;
+  waitingForFriend?: boolean;
   // Fila vazia não pode virar tela de espera infinita: passado um tempo, a
   // pessoa pode treinar contra o robô (modo que já existe e é testado) em vez
   // de só olhar a animação. Não vale nota — a tela diz isso.
@@ -76,16 +81,49 @@ export default function MatchmakingScreen({
               ⚔️
             </Animated.Text>
             <Text style={s.title} accessibilityLiveRegion="polite">
-              {status === "connecting" ? "Conectando…" : "Procurando adversário…"}
+              {status === "connecting"
+                ? "Conectando…"
+                : waitingForFriend
+                  ? "Esperando seu amigo…"
+                  : "Procurando adversário…"}
             </Text>
-            <Text style={s.body}>Assim que alguém entrar, a partida começa na hora.</Text>
-            {status === "queued" && <Text style={s.body}>Tempo na fila: {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}</Text>}
             <Text style={s.body}>
-              {seconds >= BOT_OFFER_AFTER_SECONDS
+              {waitingForFriend
+                ? "A partida começa assim que a outra pessoa entrar com o código."
+                : "Assim que alguém entrar, a partida começa na hora."}
+            </Text>
+            {!!inviteCode && (
+              <>
+                <Text style={s.codeLabel}>CÓDIGO DO CONVITE</Text>
+                <Text selectable style={s.code} accessibilityLabel={`Código do convite: ${inviteCode.split("").join(" ")}`}>
+                  {inviteCode}
+                </Text>
+                <Button
+                  secondary
+                  onPress={() =>
+                    Share.share({
+                      message: `Bora duelar no Duelou? Entre com o código ${inviteCode} na Arena Rush.`,
+                    }).catch(() => {})
+                  }
+                >
+                  Compartilhar código
+                </Button>
+                <Text style={s.body}>Amistoso por convite não altera a nota de ninguém.</Text>
+              </>
+            )}
+            {status === "queued" && !waitingForFriend && (
+              <Text style={s.body}>
+                Tempo na fila: {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}
+              </Text>
+            )}
+            <Text style={s.body}>
+              {waitingForFriend
+                ? "Você pode cancelar e voltar quando quiser."
+                : seconds >= BOT_OFFER_AFTER_SECONDS
                 ? "A busca está demorando — pode ser que tenha pouca gente online agora. Continue esperando (a partida começa sozinha quando alguém entrar) ou treine contra o robô enquanto isso."
                 : "Acerte desafios para invocar tropas. Uma sequência de acertos ajuda a criar tropas mais fortes."}
             </Text>
-            {status === "queued" && seconds >= BOT_OFFER_AFTER_SECONDS && onTrainWithBot && (
+            {status === "queued" && !waitingForFriend && seconds >= BOT_OFFER_AFTER_SECONDS && onTrainWithBot && (
               <>
                 <Button onPress={onTrainWithBot}>Treinar contra o robô</Button>
                 <Text style={s.body}>O treino não altera sua nota na Arena.</Text>
@@ -107,4 +145,12 @@ const s = StyleSheet.create({
   icon: { fontSize: 48 },
   title: { fontSize: 24, fontWeight: "900", color: arena.text, textAlign: "center" },
   body: { fontSize: 14, lineHeight: 21, color: arena.textDim, textAlign: "center" },
+  codeLabel: { fontSize: 10, fontWeight: "900", letterSpacing: 1.5, color: arena.textFaint },
+  code: {
+    fontSize: 34,
+    fontWeight: "900",
+    letterSpacing: 6,
+    color: arena.text,
+    fontVariant: ["tabular-nums"],
+  },
 });

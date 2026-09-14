@@ -22,6 +22,12 @@ export type ArenaRatingDelta = { before: number; after: number; delta: number };
 // "waiting" = você chamou e está esperando ele;
 // "declined" = não vai rolar (ele saiu ou o prazo acabou).
 export type ArenaRematchState = "idle" | "offered" | "waiting" | "declined";
+// Como esta conexão começou: fila normal, criando um convite pra um amigo ou
+// entrando no convite de alguém.
+export type ArenaIntent =
+  | { type: "queue" }
+  | { type: "host" }
+  | { type: "join"; code: string };
 export type ArenaAnswerFeedback = {
   seq: number;
   correct: boolean;
@@ -46,7 +52,7 @@ export type ArenaAnswerFeedback = {
 // server/arena-ws.mjs). Reconectar dentro da janela, numa partida já em
 // andamento, recebe "matchResumed" do servidor em vez de cair na fila de
 // novo.
-export default function useArenaSocket() {
+export default function useArenaSocket(intent: ArenaIntent = { type: "queue" }) {
   const [phase, setPhase] = useState<ArenaSocketPhase>("connecting");
   const [matchId, setMatchId] = useState<string | null>(null);
   const [you, setYou] = useState<Side | null>(null);
@@ -76,6 +82,12 @@ export default function useArenaSocket() {
   // partida começa — a tela de revelação conta até lá.
   const [countdownEndsAt, setCountdownEndsAt] = useState<number | null>(null);
   const [rematch, setRematch] = useState<ArenaRematchState>("idle");
+  const [inviteCode, setInviteCode] = useState<string | null>(null);
+  const [friendly, setFriendly] = useState(false);
+  // A intenção é lida dentro dos handlers do socket (montados uma vez por
+  // conexão), então precisa de referência — e ela também vale na reconexão.
+  const intentRef = useRef(intent);
+  intentRef.current = intent;
   const lastMatchIdRef = useRef<string | null>(null);
   const answerSeqRef = useRef(0);
 
@@ -145,7 +157,19 @@ export default function useArenaSocket() {
         if (cancelled || !isCurrent()) return;
         reconnectAttemptRef.current = 0;
         reconnectDeadlineRef.current = null;
-        ws.send(JSON.stringify({ type: "queue" }));
+        // Numa partida já em andamento o servidor responde com "matchResumed"
+        // e ignora isso — mandar a intenção original de novo é inofensivo e
+        // cobre o caso de a queda ter acontecido antes de qualquer partida.
+        const current = intentRef.current;
+        if (current.type === "host") ws.send(JSON.stringify({ type: "createInvite" }));
+        else if (current.type === "join")
+          ws.send(JSON.stringify({ type: "joinInvite", code: current.code }));
+        else ws.send(JSON.stringify({ type: "queue" }));
+        // Convite não passa pela fila, então nunca chega um "queued" do
+        // servidor — sem isso a tela ficaria em "Conectando…" o tempo todo
+        // da espera, que é justamente quando o código precisa aparecer.
+        if (current.type !== "queue" && phaseRef.current === "connecting")
+          setPhaseBoth("queued");
       };
       ws.onerror = () => {
         // onclose sempre vem em seguida numa falha de conexão — só ele
@@ -171,6 +195,8 @@ export default function useArenaSocket() {
             youRef.current = msg.you;
             matchIdRef.current = msg.matchId;
             lastMatchIdRef.current = msg.matchId;
+            setInviteCode(null);
+            setFriendly(!!msg.friendly);
             // Uma revanche é uma partida nova: limpa o campo, o placar e o
             // convite da anterior antes da revelação.
             setRematch("idle");
@@ -245,6 +271,12 @@ export default function useArenaSocket() {
             // conclusão, não uma reação instantânea.
             if (opponentReconnectingRef.current) setOpponentLeft(true);
             setPhaseBoth("ended");
+            break;
+          case "inviteCreated":
+            setInviteCode(msg.code ?? null);
+            break;
+          case "inviteExpired":
+            setInviteCode(null);
             break;
           case "rematchPending":
             setRematch("waiting");
@@ -393,6 +425,8 @@ export default function useArenaSocket() {
     lastAnswer,
     rematch,
     askRematch,
+    inviteCode,
+    friendly,
     ratingDelta,
     submitAnswer,
     forfeit,
