@@ -123,6 +123,11 @@ try {
   await b.page.close();
 
   // --- Cenário 2: fechar a aba de um jogador no meio da partida ---
+  // Desde o Ticket 39, isso não é mais uma vitória instantânea: a partida
+  // pausa, Dave vê um selo "reconectando" ao lado do nome da Carol, e só
+  // depois do grace period (RECONNECT_GRACE_MS, ~20s em produção — sem
+  // override aqui, porque este script roda contra o servidor de verdade)
+  // é que o forfeit por queda acontece de fato.
   const carol = await guest("PvPCarol" + Date.now().toString().slice(-6));
   const dave = await guest("PvPDave" + Date.now().toString().slice(-6));
   const c = await playerPage(carol.token);
@@ -134,15 +139,87 @@ try {
   await d.page.getByText("BATALHA ENCONTRADA", { exact: true }).waitFor({ timeout: 15000 });
   await challengeLocator(d.page).waitFor({ timeout: 8000 });
 
-  // Carol "cai" (fecha a aba) — Dave deveria ganhar sem precisar fazer nada.
+  // Carol "cai" (fecha a aba) — a partida pausa e Dave vê o selo de
+  // reconexão pendente antes de qualquer coisa ser decidida.
   await c.page.close();
-  await d.page.getByText("Seu adversário saiu da partida.", { exact: true }).waitFor({ timeout: 8000 });
+  await d.page.getByText(/Reconectando/).first().waitFor({ timeout: 5000 });
+  assert.equal(
+    await d.page.getByText(/VITÓRIA|DERROTA|EMPATE/).count(),
+    0,
+    "não deveria decidir a partida na hora — só depois do grace period",
+  );
+
+  // Só depois do prazo de reconexão esgotado é que vira derrota/vitória de
+  // verdade, com a mesma mensagem de sempre.
+  await d.page.getByText("Seu adversário saiu da partida.", { exact: true }).waitFor({ timeout: 25000 });
   await d.page.getByText(/VITÓRIA|DERROTA|EMPATE/).waitFor({ timeout: 8000 });
   assert.equal(await d.page.getByText(/VITÓRIA|DERROTA|EMPATE/).innerText(), "VITÓRIA");
   assert.deepEqual(d.errors, []);
-  console.log("PASS: cenário 2 — fechar a aba de um jogador declara vitória pro outro na hora.");
+  console.log(
+    "PASS: cenário 2 — fechar a aba de um jogador pausa a partida e só decide vitória depois do grace period esgotado.",
+  );
 
   await d.page.close();
+
+  // --- Cenário 3: fechar e reabrir com o mesmo token dentro do grace period ---
+  // Diferente do cenário 2 (ninguém volta), aqui quem caiu reconecta a
+  // tempo: não deveria passar pela fila/revelação de novo ("BATALHA
+  // ENCONTRADA" não aparece uma segunda vez), o estado retomado deveria
+  // bater, e os dois deveriam conseguir terminar a partida jogando.
+  const emma = await guest("PvPEmma" + Date.now().toString().slice(-6));
+  const frank = await guest("PvPFrank" + Date.now().toString().slice(-6));
+  const e1 = await playerPage(emma.token);
+  const f = await playerPage(frank.token);
+
+  await enterArenaRush(e1.page);
+  await enterArenaRush(f.page);
+  await e1.page.getByText("BATALHA ENCONTRADA", { exact: true }).waitFor({ timeout: 15000 });
+  await f.page.getByText("BATALHA ENCONTRADA", { exact: true }).waitFor({ timeout: 15000 });
+  await Promise.all([
+    challengeLocator(e1.page).waitFor({ timeout: 8000 }),
+    challengeLocator(f.page).waitFor({ timeout: 8000 }),
+  ]);
+  // Progresso real antes de cair, pra provar que o estado retomado depois
+  // não é uma partida nova do zero.
+  await Promise.all([answerFor(e1.page, 3000), answerFor(f.page, 3000)]);
+
+  // Emma "cai" (fecha a aba) — Frank vê o selo de reconexão pendente.
+  await e1.page.close();
+  await f.page.getByText(/Reconectando/).first().waitFor({ timeout: 5000 });
+
+  // Emma volta a tempo, com o mesmo token, numa aba nova.
+  const e2 = await playerPage(emma.token);
+  await enterArenaRush(e2.page);
+  await e2.page.getByRole("button", { name: "Desistir", exact: true }).waitFor({ timeout: 8000 });
+  assert.equal(
+    await e2.page.getByText("BATALHA ENCONTRADA", { exact: true }).count(),
+    0,
+    "reconectar dentro do prazo não deveria passar pela revelação de novo",
+  );
+
+  // Frank vê o adversário "voltar" — o selo de reconexão pendente some.
+  await f.page.getByText(/Reconectando/).first().waitFor({ state: "hidden", timeout: 5000 });
+  assert.deepEqual(e2.errors, []);
+  assert.deepEqual(f.errors, []);
+  console.log("PASS: cenário 3 — reconectar com o mesmo token dentro do prazo retoma sem passar pela fila de novo.");
+
+  // Os dois continuam jogando de verdade depois da retomada.
+  const [answeredE2, answeredF] = await Promise.all([
+    answerFor(e2.page, 6000),
+    answerFor(f.page, 6000),
+  ]);
+  assert.ok(answeredE2 >= 1, `Emma (retomada) deveria conseguir responder depois de reconectar (respondeu ${answeredE2})`);
+  assert.ok(answeredF >= 1, `Frank deveria continuar recebendo desafios normalmente (respondeu ${answeredF})`);
+
+  await f.page.getByRole("button", { name: "Desistir", exact: true }).click();
+  await e2.page.getByText(/VITÓRIA|DERROTA|EMPATE/).waitFor({ timeout: 8000 });
+  await f.page.getByText(/VITÓRIA|DERROTA|EMPATE/).waitFor({ timeout: 8000 });
+  assert.equal(await e2.page.getByText(/VITÓRIA|DERROTA|EMPATE/).innerText(), "VITÓRIA");
+  assert.equal(await f.page.getByText(/VITÓRIA|DERROTA|EMPATE/).innerText(), "DERROTA");
+  console.log("PASS: cenário 3 — depois de retomada, a partida termina normalmente por desistência explícita.");
+
+  await e2.page.close();
+  await f.page.close();
 } finally {
   // Fecha as conexões (e com isso qualquer partida ainda ativa por causa de
   // um assert que falhou no meio) ANTES de excluir as contas — excluir uma
