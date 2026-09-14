@@ -6,6 +6,7 @@ import Character from "../components/Character";
 import Button from "../components/Button";
 import Card from "../components/Card";
 import ArenaOnlineScreen from "./ArenaOnlineScreen";
+import ArenaScreen from "./ArenaScreen";
 import { api } from "../api";
 import { gradients, palette } from "../theme";
 
@@ -31,12 +32,13 @@ type ArenaHistoryRow = {
 
 export default function ArenaLobby({ avatar, onExit }: { avatar?: unknown; onExit: () => void }) {
   const [playing, setPlaying] = useState(false);
+  const [training, setTraining] = useState(false);
   const [stats, setStats] = useState<ArenaStats | null>(null);
   const [history, setHistory] = useState<ArenaHistoryRow[]>([]);
   // Recarrega ao voltar de uma partida (playing volta a false): a nota e o
   // cartel mudaram agora mesmo, seria estranho a tela mostrar o de antes.
   useEffect(() => {
-    if (playing) return;
+    if (playing || training) return;
     let alive = true;
     Promise.all([api<ArenaStats>("/v1/arena/me"), api<ArenaHistoryRow[]>("/v1/arena/history")])
       .then(([s, h]) => {
@@ -51,8 +53,18 @@ export default function ArenaLobby({ avatar, onExit }: { avatar?: unknown; onExi
     return () => {
       alive = false;
     };
-  }, [playing]);
-  if (playing) return <ArenaOnlineScreen onExit={() => setPlaying(false)} />;
+  }, [playing, training]);
+  if (training) return <ArenaScreen onExit={() => setTraining(false)} />;
+  if (playing)
+    return (
+      <ArenaOnlineScreen
+        onExit={() => setPlaying(false)}
+        onTrainWithBot={() => {
+          setPlaying(false);
+          setTraining(true);
+        }}
+      />
+    );
   const outcomeLabel = { win: "Vitória", loss: "Derrota", draw: "Empate" } as const;
   const outcomeColor = { win: palette.green, loss: palette.red, draw: palette.textDim } as const;
   return <SafeAreaView style={{ flex: 1, backgroundColor: palette.bg }}>

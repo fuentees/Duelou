@@ -44,7 +44,13 @@ const TROOP_LABEL: Record<TroopType, string> = {
 
 type Poof = { key: number; position: number; side: Side };
 
-export default function ArenaOnlineScreen({ onExit }: { onExit?: () => void }) {
+export default function ArenaOnlineScreen({
+  onExit,
+  onTrainWithBot,
+}: {
+  onExit?: () => void;
+  onTrainWithBot?: () => void;
+}) {
   const socket = useArenaSocket();
   const reducedMotion = useReducedMotion();
   const [laneHeight, setLaneHeight] = useState(0);
@@ -142,7 +148,23 @@ export default function ArenaOnlineScreen({ onExit }: { onExit?: () => void }) {
   };
 
   if (socket.phase === "connecting" || socket.phase === "queued")
-    return <MatchmakingScreen status={socket.phase} onCancel={handleExit} />;
+    return (
+      <MatchmakingScreen
+        status={socket.phase}
+        onCancel={handleExit}
+        onTrainWithBot={
+          onTrainWithBot &&
+          (() => {
+            // Sai da fila antes de ir treinar: ficar na fila enquanto joga
+            // contra o robô faria o adversário de verdade cair numa partida
+            // sem ninguém do outro lado.
+            socket.leaveQueue();
+            socket.disconnect();
+            onTrainWithBot();
+          })
+        }
+      />
+    );
 
   // Se já tinha uma partida em andamento (temos "state"), a reconexão fica
   // dentro da própria tela de batalha (campo congelado + selo sobreposto,
@@ -207,8 +229,8 @@ export default function ArenaOnlineScreen({ onExit }: { onExit?: () => void }) {
             avatar={socket.me?.avatar}
             playerName={socket.me?.name}
             comeback={state.winner === "player" && wasCriticalRef.current}
-            onRematch={handleExit}
-            rematchLabel="Voltar para jogar"
+            onRematch={socket.playAgain}
+            rematchLabel="Jogar outra"
             onMenu={handleExit}
             onError={() => {}}
           />

@@ -6,16 +6,26 @@ import LiveStatus from "../components/LiveStatus";
 import useReducedMotion from "../useReducedMotion";
 import { palette } from "../theme";
 
+// A partir de quantos segundos de espera a tela oferece treinar contra o
+// robô. Antes daqui, atrapalha mais do que ajuda: a maioria das filas resolve
+// em poucos segundos.
+const BOT_OFFER_AFTER_SECONDS = 25;
+
 export default function MatchmakingScreen({
   status,
   errorMessage,
   onCancel,
   onRetry,
+  onTrainWithBot,
 }: {
   status: "connecting" | "queued" | "reconnecting" | "error";
   errorMessage?: string;
   onCancel: () => void;
   onRetry?: () => void;
+  // Fila vazia não pode virar tela de espera infinita: passado um tempo, a
+  // pessoa pode treinar contra o robô (modo que já existe e é testado) em vez
+  // de só olhar a animação. Não vale nota — a tela diz isso.
+  onTrainWithBot?: () => void;
 }) {
   const reducedMotion = useReducedMotion();
   const pulse = useRef(new Animated.Value(0.4)).current;
@@ -70,10 +80,16 @@ export default function MatchmakingScreen({
             <Text style={s.body}>Assim que alguém entrar, a partida começa na hora.</Text>
             {status === "queued" && <Text style={s.body}>Tempo na fila: {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}</Text>}
             <Text style={s.body}>
-              {seconds >= 30
-                ? "A busca está demorando. Você pode continuar esperando ou cancelar e voltar ao menu."
+              {seconds >= BOT_OFFER_AFTER_SECONDS
+                ? "A busca está demorando — pode ser que tenha pouca gente online agora. Continue esperando (a partida começa sozinha quando alguém entrar) ou treine contra o robô enquanto isso."
                 : "Acerte desafios para invocar tropas. Uma sequência de acertos ajuda a criar tropas mais fortes."}
             </Text>
+            {status === "queued" && seconds >= BOT_OFFER_AFTER_SECONDS && onTrainWithBot && (
+              <>
+                <Button onPress={onTrainWithBot}>Treinar contra o robô</Button>
+                <Text style={s.body}>O treino não altera sua nota na Arena.</Text>
+              </>
+            )}
           </>
         )}
         <Button secondary onPress={onCancel}>

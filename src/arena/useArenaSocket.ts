@@ -286,6 +286,31 @@ export default function useArenaSocket() {
     connectRef.current();
   }, []);
 
+  // "Jogar outra" na tela de resultado: volta pra fila sem passar pelo menu.
+  // Limpa tudo o que era da partida anterior antes de reconectar — senão a
+  // próxima busca apareceria com o campo e o placar da partida que acabou.
+  const playAgain = useCallback(() => {
+    setState(null);
+    setWinner(null);
+    setChallenge(null);
+    setChallengeId(null);
+    setVerdict(null);
+    setReflexGo(false);
+    setLastAnswer(null);
+    setRatingDelta(null);
+    setOpponent(null);
+    setOpponentLeft(false);
+    setOpponentReconnecting(false);
+    opponentReconnectingRef.current = false;
+    youRef.current = null;
+    matchIdRef.current = null;
+    challengeIdRef.current = null;
+    setMatchId(null);
+    setYou(null);
+    reconnectNow();
+  }, [reconnectNow]);
+
+
   return {
     phase,
     matchId,
@@ -307,6 +332,7 @@ export default function useArenaSocket() {
     submitAnswer,
     forfeit,
     leaveQueue,
+    playAgain,
     disconnect,
     reconnectNow,
   };

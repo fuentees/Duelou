@@ -32,6 +32,11 @@ const MAX_SOCKETS_PER_PLAYER = 2;
 // ping/pong do próprio protocolo WebSocket: o navegador (e o React Native)
 // respondem sozinhos, sem nenhuma mensagem nova do lado do cliente.
 const PING_INTERVAL_MS = 4000;
+// De quanto em quanto tempo a fila tenta juntar quem já está esperando. O
+// pareamento por nota tem janela que abre com o tempo (ver arena-queue.mjs);
+// sem essa varredura, duas pessoas de notas distantes ficariam paradas pra
+// sempre só porque ninguém novo entrou depois delas.
+const QUEUE_SWEEP_MS = 2000;
 
 export function attachArenaRealtime(server, db, clock = Date.now, options = {}) {
   const {
@@ -46,7 +51,7 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
   const matches = createArenaMatchEngine({ now: clock, durationSeconds });
   const persistence = createArenaPersistence(db, clock);
   const rating = createArenaRating(db, clock);
-  const queue = createArenaQueue();
+  const queue = createArenaQueue({ now: clock });
   const latency = createLatencyTracker();
 
   const socketsByPlayer = new Map(); // uid -> Set<ws>
@@ -197,11 +202,21 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
     }, countdownMs);
   }
 
+  function ratingOf(uid) {
+    try {
+      return rating.statsFor(uid).rating;
+    } catch {
+      // Sem ficha (banco indisponível, conta recém-criada em corrida), o
+      // jogador entra como mediano em vez de ficar de fora da fila.
+      return 1000;
+    }
+  }
+
   function handleQueue(ws, uid) {
     if (activeMatchOf.has(uid))
       return send(ws, "error", { message: "Você já está em uma partida." });
     limitRequest(`arena_queue:${uid}`, 20);
-    const result = queue.join(uid);
+    const result = queue.join(uid, ratingOf(uid));
     if (!result.paired) return send(ws, "queued", {});
     startMatch(result.opponent, uid);
   }
@@ -352,6 +367,24 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
   }, PING_INTERVAL_MS);
   pingTimer.unref?.();
 
+  const sweepTimer = setInterval(() => {
+    try {
+      for (const [a, b] of queue.sweep()) {
+        // Alguém pode ter fechado a aba entre a varredura e agora: sem os
+        // dois sockets vivos, devolve quem sobrou pra fila em vez de criar
+        // uma partida contra ninguém.
+        const aliveA = socketsByPlayer.get(a)?.size;
+        const aliveB = socketsByPlayer.get(b)?.size;
+        if (aliveA && aliveB) startMatch(a, b);
+        else if (aliveA) queue.join(a, ratingOf(a));
+        else if (aliveB) queue.join(b, ratingOf(b));
+      }
+    } catch (e) {
+      console.warn(JSON.stringify({ event: "arena_queue_sweep_failed", error: e?.message }));
+    }
+  }, QUEUE_SWEEP_MS);
+  sweepTimer.unref?.();
+
   wss.on("connection", (ws, req, uid) => {
     ws.uid = uid;
     if (!socketsByPlayer.has(uid)) socketsByPlayer.set(uid, new Set());
@@ -464,6 +497,7 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
 
   function stop() {
     clearInterval(pingTimer);
+    clearInterval(sweepTimer);
     latency.stop();
     server.removeListener("upgrade", onUpgrade);
     for (const sockets of socketsByPlayer.values())
