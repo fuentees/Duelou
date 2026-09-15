@@ -24,7 +24,17 @@ export default function AuthScreen({
   const [name, setName] = useState(""),
     [recoveryInput, setRecoveryInput] = useState(""),
     [recoveryOpen, setRecoveryOpen] = useState(defaultRecoveryOpen);
-  const validName = /^[\p{L}\p{N} _-]{2,24}$/u.test(name.trim());
+  const trimmed = name.trim();
+  const validName = /^[\p{L}\p{N} _-]{2,24}$/u.test(trimmed);
+  // Botão desligado sem dizer por quê é beco sem saída: enquanto o apelido
+  // não serve, a tela diz o que falta em vez de só ficar cinza.
+  const nameHint = !name
+    ? "Use de 2 a 24 letras ou números. Espaços, hífen e sublinhado também são aceitos."
+    : trimmed.length < 2
+      ? "Faltam letras: o apelido precisa de pelo menos 2 caracteres."
+      : validName
+        ? "Pode entrar. Dá pra trocar o personagem depois, no seu perfil."
+        : "Esse apelido tem algum caractere que não dá: use letras, números, espaço, hífen ou sublinhado.";
   const recoveryCode = recoveryInput.replace(/[-\s]/g, "").toUpperCase();
   const validRecovery = /^[A-F0-9]{24}$/.test(recoveryCode);
   return (
@@ -38,6 +48,19 @@ export default function AuthScreen({
         Escolha seu apelido para salvar partidas e desafiar amigos. Você
         receberá um código para recuperar a conta em outro aparelho.
       </Text>
+      {/* O que tem do outro lado: antes a tela pedia um apelido sem dizer
+          pra quê. */}
+      <View style={{ gap: 6 }}>
+        {[
+          "9 jogos de raciocínio, com campanha de 30 fases cada",
+          "Duelo 1 × 1 ao vivo, com nota e divisão",
+          "Salas para a turma inteira, por código",
+        ].map((linha) => (
+          <Text key={linha} style={[s.muted, { color: "#F0EDFF" }]}>
+            · {linha}
+          </Text>
+        ))}
+      </View>
       </LinearGradient>
       <Card>
       {!recoveryOpen ? (
@@ -55,7 +78,14 @@ export default function AuthScreen({
             placeholderTextColor={palette.textFaint}
             style={s.input}
           />
-          <Text style={s.muted}>Use de 2 a 24 letras ou números. Espaços, hífen e sublinhado também são aceitos.</Text>
+          <Text style={[s.muted, validName ? { color: palette.green } : null]}>
+            {nameHint}
+          </Text>
+          {!!error && (
+            <Text accessibilityRole="alert" style={s.error}>
+              {error}
+            </Text>
+          )}
           <Button disabled={busy || !validName} onPress={() => onCreate(name.trim())}>
             {busy ? "Criando jogador…" : "Criar jogador"}
           </Button>
@@ -80,7 +110,16 @@ export default function AuthScreen({
             placeholderTextColor={palette.textFaint}
             style={s.input}
           />
-          <Text style={s.muted}>Cole os 24 caracteres do código que você guardou ao criar sua conta, com ou sem hífens.</Text>
+          <Text style={s.muted}>
+            {recoveryInput && !validRecovery
+              ? `${recoveryCode.length} de 24 caracteres. Cole o código inteiro, com ou sem hífens.`
+              : "Cole os 24 caracteres do código que você guardou ao criar sua conta, com ou sem hífens."}
+          </Text>
+          {!!error && (
+            <Text accessibilityRole="alert" style={s.error}>
+              {error}
+            </Text>
+          )}
           <Button disabled={busy || !validRecovery} onPress={() => onRecover(recoveryCode)}>
             {busy ? "Recuperando conta…" : "Recuperar conta"}
           </Button>
@@ -90,11 +129,6 @@ export default function AuthScreen({
         </>
       )}
       </Card>
-      {!!error && (
-        <Text accessibilityRole="alert" style={s.error}>
-          {error}
-        </Text>
-      )}
     </ScrollView>
   );
 }
