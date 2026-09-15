@@ -22,10 +22,18 @@ export default function Troop({
   troop,
   laneHeight,
   avatar,
+  frontline = true,
 }: {
   troop: TroopData;
   laneHeight: number;
   avatar?: unknown;
+  // Só a tropa mais avançada de cada lado luta de verdade (ver ENGAGE_DISTANCE
+  // em shared/arena/engine.ts — o resto fica parado atrás, esperando a vez).
+  // Com até MAX_TROOPS_PER_SIDE (10) tropas por lado, renderizar o modelo 3D
+  // completo pra todo mundo enfileirado ficava poluído — só quem está de
+  // verdade na linha de frente ganha o retrato cheio; o resto vira um selo
+  // simples (ainda com forma/ícone/seta próprios, não só cor).
+  frontline?: boolean;
 }) {
   const reducedMotion = useReducedMotion();
   const visual = TROOP_VISUAL[troop.type];
@@ -70,6 +78,9 @@ export default function Troop({
   // só pra parecer uma multidão, não uma fila única perfeitamente alinhada.
   const jitter = ((troop.id * 137) % 41) - 20;
   const hpRatio = Math.max(0, troop.hp / troop.maxHp);
+  // Quem só está na fila (não frontline) encolhe — com até 10 tropas por
+  // lado, o retrato 3D completo em todo mundo empilhado ficava poluído.
+  const renderSize = frontline ? visual.size : Math.round(visual.size * 0.62);
 
   return (
     <Animated.View
@@ -77,18 +88,34 @@ export default function Troop({
         position: "absolute",
         top,
         left: "50%",
-        marginLeft: jitter - visual.size / 2,
-        width: visual.size,
-        height: visual.size,
+        marginLeft: jitter - renderSize / 2,
+        width: renderSize,
+        height: renderSize,
         transform: [{ scale }],
       }}
     >
-      <Character
-        avatar={avatar}
-        size={visual.size}
-        framed={false}
-        yaw={troop.side === "player" ? -0.5 : 0.5}
-      />
+      {frontline ? (
+        <Character
+          avatar={avatar}
+          size={renderSize}
+          framed={false}
+          yaw={troop.side === "player" ? -0.5 : 0.5}
+        />
+      ) : (
+        <View
+          style={{
+            width: renderSize,
+            height: renderSize,
+            borderRadius: renderSize / 2,
+            backgroundColor: color,
+            opacity: 0.55,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Ionicons name={visual.icon} size={renderSize * 0.5} color="#FFFFFF" />
+        </View>
+      )}
       <View
         style={{
           position: "absolute",
@@ -123,7 +150,7 @@ export default function Troop({
           style={{
             position: "absolute",
             bottom: -6,
-            width: visual.size,
+            width: renderSize,
             height: 3,
             borderRadius: 2,
             backgroundColor: "#00000030",
@@ -146,7 +173,7 @@ export default function Troop({
         style={{
           position: "absolute",
           top: -13,
-          width: visual.size,
+          width: renderSize,
           textAlign: "center",
           fontSize: 11,
           color,

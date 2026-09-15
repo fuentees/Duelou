@@ -9,6 +9,7 @@ import {
   FAST_CHOICE_MS,
   TACTICS,
   FAST_REFLEX_MS,
+  OVERTIME_CAP_SECONDS,
   createArenaState,
   decideTroopType,
   spawn,
@@ -21,6 +22,7 @@ const DEFAULT_DURATION_SECONDS = 100;
 export function createArenaMatchEngine({
   tickMs = DEFAULT_TICK_MS,
   durationSeconds = DEFAULT_DURATION_SECONDS,
+  overtimeCapSeconds = OVERTIME_CAP_SECONDS,
   now = Date.now,
   random = Math.random,
   setIntervalFn = setInterval,
@@ -47,7 +49,7 @@ export function createArenaMatchEngine({
    * revelação/contagem do Ticket 19 sem o motor já processando tropas.
    */
   function createMatch(matchId, playerAId, playerBId, startsAt = now()) {
-    const state = createArenaState(durationSeconds);
+    const state = createArenaState(durationSeconds, overtimeCapSeconds);
     const sideOf = new Map([
       [playerAId, "player"],
       [playerBId, "enemy"],

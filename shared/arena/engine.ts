@@ -29,6 +29,16 @@ export const TROOP_CONFIG: Record<TroopType, TroopConfig> = {
 };
 
 export const MAX_TROOPS_PER_SIDE = 10;
+// Empate na base ao fim do tempo normal era quase garantido: o tipo de tropa
+// é determinístico (mesma resposta rápida/combo sempre vira a mesma tropa),
+// então dois jogadores de nível parecido (o pareamento já tenta emparelhar
+// por habilidade) trocam dano quase simétrico e batem no mesmo número várias
+// vezes. Em vez de aceitar o empate na hora, a partida entra em "prorrogação"
+// (step() continua rodando, todo o resto igual) até alguém acertar a base —
+// esse teto é só uma rede de segurança pro caso raríssimo de ninguém acertar
+// nada (ex.: os dois pararam de responder); tanque, a tropa mais lenta, cruza
+// a pista inteira em 20s, então 40s dá folga de sobra pra uma chegada real.
+export const OVERTIME_CAP_SECONDS = 40;
 // Espaço mínimo entre duas tropas do mesmo lado na pista (0-100), pra não
 // ficarem sobrepostas nem quando uma fila inteira está parada atrás da linha
 // de frente engajada em combate.
@@ -66,6 +76,14 @@ export type ArenaStats = {
 
 export type ArenaState = {
   timeRemaining: number; // segundos
+  // >0 assim que o tempo normal acaba empatado — a partida continua
+  // (prorrogação) até alguém acertar a base ou o teto de segurança estourar.
+  overtimeElapsed: number;
+  // Configurável por partida (não uma constante fixa) pelo mesmo motivo de
+  // durationSeconds: testes de integração usam partidas de poucos segundos e
+  // precisam de um teto de prorrogação igualmente curto, senão o teste
+  // esperaria os 40s padrão à toa.
+  overtimeCapSeconds: number;
   playerBaseHp: number; // 0..100
   enemyBaseHp: number; // 0..100
   troops: Troop[];
@@ -83,9 +101,14 @@ function emptyStats(): ArenaStats {
   return { troopsSpawned: 0, challengesTotal: 0, hits: 0, maxCombo: 0 };
 }
 
-export function createArenaState(durationSeconds = 100): ArenaState {
+export function createArenaState(
+  durationSeconds = 100,
+  overtimeCapSeconds = OVERTIME_CAP_SECONDS,
+): ArenaState {
   return {
     timeRemaining: durationSeconds,
+    overtimeElapsed: 0,
+    overtimeCapSeconds,
     playerBaseHp: 100,
     enemyBaseHp: 100,
     troops: [],
@@ -233,25 +256,33 @@ export function step(
     state.troops = state.troops.filter((t) => !arrivedIds.has(t.id));
   }
 
-  if (
-    state.playerBaseHp <= 0 ||
-    state.enemyBaseHp <= 0 ||
-    state.timeRemaining <= 0
-  ) {
+  if (state.playerBaseHp <= 0 || state.enemyBaseHp <= 0) {
     state.over = true;
     state.winner =
       state.playerBaseHp <= 0 && state.enemyBaseHp <= 0
         ? "draw"
         : state.playerBaseHp <= 0
           ? "enemy"
-          : state.enemyBaseHp <= 0
-            ? "player"
-            : state.playerBaseHp === state.enemyBaseHp
-              ? "draw"
-              : state.playerBaseHp > state.enemyBaseHp
-                ? "player"
-                : "enemy";
+          : "player";
     events.push({ type: "matchOver", winner: state.winner });
+  } else if (state.timeRemaining <= 0) {
+    if (state.playerBaseHp !== state.enemyBaseHp) {
+      state.over = true;
+      state.winner = state.playerBaseHp > state.enemyBaseHp ? "player" : "enemy";
+      events.push({ type: "matchOver", winner: state.winner });
+    } else {
+      // Empatado bem no fim do tempo normal — prorrogação (ver
+      // OVERTIME_CAP_SECONDS): step() continua exatamente igual, só sem
+      // decrementar timeRemaining (que já está travado em 0), até alguém
+      // acertar a base (bloco "chegada na base" acima resolve isso sozinho,
+      // ainda neste mesmo tick ou em um futuro) ou o teto de segurança bater.
+      state.overtimeElapsed += dtSeconds;
+      if (state.overtimeElapsed >= state.overtimeCapSeconds) {
+        state.over = true;
+        state.winner = "draw";
+        events.push({ type: "matchOver", winner: "draw" });
+      }
+    }
   }
   return events;
 }

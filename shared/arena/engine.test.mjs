@@ -7,6 +7,7 @@ import {
   step,
   TROOP_CONFIG,
   MAX_TROOPS_PER_SIDE,
+  OVERTIME_CAP_SECONDS,
 } from "./engine.ts";
 
 const noRandom = () => 0.5; // sem variação de dano, deixa os testes previsíveis
@@ -81,6 +82,49 @@ test("partida termina quando uma base zera", () => {
   const after = step(state, 1, noRandom);
   assert.deepEqual(after, []);
   assert.equal(state.enemyBaseHp, hpBefore);
+});
+
+test("empate no tempo normal entra em prorrogação e resolve no próximo acerto na base, sem declarar empate na hora", () => {
+  const state = createArenaState(1);
+  step(state, 1, noRandom); // esgota o tempo normal com as duas bases em 100 (empatadas)
+  assert.equal(state.over, false, "não deveria terminar ainda — devia entrar em prorrogação");
+  assert.ok(state.overtimeElapsed > 0);
+
+  spawn(state, "player", "scout");
+  let events = [];
+  for (let i = 0; i < 200 && !state.over; i++)
+    events = events.concat(step(state, 0.1, noRandom));
+  assert.equal(state.over, true);
+  assert.equal(state.winner, "player", "quem acerta a base na prorrogação vence, não empata");
+  assert.ok(events.some((e) => e.type === "matchOver" && e.winner === "player"));
+});
+
+test("prorrogação sem ninguém acertar a base estoura o teto de segurança e aí sim empata", () => {
+  const state = createArenaState(1);
+  step(state, 1, noRandom); // entra em prorrogação; nenhum lado tem tropa nenhuma
+  let events = [];
+  for (let i = 0; i < 1000 && !state.over; i++)
+    events = events.concat(step(state, 1, noRandom));
+  assert.equal(state.over, true);
+  assert.ok(state.overtimeElapsed >= OVERTIME_CAP_SECONDS);
+  assert.equal(state.winner, "draw");
+  assert.ok(events.some((e) => e.type === "matchOver" && e.winner === "draw"));
+});
+
+test("tempo acaba com bases já diferentes decide na hora, sem prorrogação", () => {
+  const state = createArenaState(100);
+  spawn(state, "player", "tank");
+  let events = [];
+  for (let i = 0; i < 300 && !events.some((e) => e.type === "baseHit"); i++)
+    events = step(state, 0.1, noRandom);
+  assert.ok(state.enemyBaseHp < 100, "base inimiga já deveria ter tomado dano");
+
+  state.timeRemaining = 0;
+  const finalEvents = step(state, 0.1, noRandom);
+  assert.equal(state.over, true);
+  assert.equal(state.overtimeElapsed, 0, "não deveria ter entrado em prorrogação — já tinha diferença de vida");
+  assert.equal(state.winner, "player");
+  assert.ok(finalEvents.some((e) => e.type === "matchOver" && e.winner === "player"));
 });
 
 test("decideTroopType: acerto normal (não rápido, combo baixo) sai scout", () => {

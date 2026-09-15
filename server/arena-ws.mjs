@@ -31,13 +31,18 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
   const {
     countdownMs = 3000,
     durationSeconds = 100,
+    overtimeCapSeconds,
     reconnectGraceMs = RECONNECT_GRACE_MS,
   } = options;
 
   const wss = new WebSocketServer({ noServer: true });
   const limitRequest = rateLimiter(clock);
   const challenges = createArenaChallenges({ now: clock });
-  const matches = createArenaMatchEngine({ now: clock, durationSeconds });
+  const matches = createArenaMatchEngine({
+    now: clock,
+    durationSeconds,
+    ...(overtimeCapSeconds !== undefined ? { overtimeCapSeconds } : {}),
+  });
   const persistence = createArenaPersistence(db, clock);
   const queue = createArenaQueue();
 

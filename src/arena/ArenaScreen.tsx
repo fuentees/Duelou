@@ -328,7 +328,16 @@ export default function ArenaScreen({
               />
             )}
             {state.troops.map((troop) => (
-              <Troop key={troop.id} troop={troop} laneHeight={laneHeight} />
+              <Troop
+                key={troop.id}
+                troop={troop}
+                laneHeight={laneHeight}
+                frontline={
+                  troop.side === "player"
+                    ? troop.position === playerFront
+                    : troop.position === enemyFront
+                }
+              />
             ))}
             {poofs.map((p) => (
               <Text
@@ -354,7 +363,11 @@ export default function ArenaScreen({
             danger={state.playerBaseHp < DANGER_THRESHOLD}
           />
           <View style={s.row}>
-            <Text style={s.caption}>Tempo restante: {Math.ceil(state.timeRemaining)}s</Text>
+            <Text style={s.caption}>
+              {state.overtimeElapsed > 0
+                ? "Prorrogação — decide no próximo acerto na base"
+                : `Tempo restante: ${Math.ceil(state.timeRemaining)}s`}
+            </Text>
             {state.combo.player >= 2 && (
               <Text style={s.combo} accessibilityLiveRegion="polite">
                 🔥 combo x{state.combo.player}

@@ -16,6 +16,11 @@ async function withServer(fn, options = {}) {
   const realtime = attachArenaRealtime(app.server, app.db, Date.now, {
     countdownMs: 50,
     durationSeconds: 3,
+    // Teto de prorrogação (shared/arena/engine.ts) bem curto — o padrão de
+    // produção (40s) faria "PvP via WebSocket..." estourar o timeout do
+    // teste toda vez que a partida de teste (poucas respostas, bases quase
+    // intactas) empatasse no fim dos 3s de durationSeconds.
+    overtimeCapSeconds: 1,
     reconnectGraceMs: 300,
     ...options,
   });

@@ -256,6 +256,7 @@ export default function ArenaOnlineScreen({ onExit }: { onExit?: () => void }) {
   if (!state)
     return <MatchmakingScreen status="connecting" onCancel={handleExit} />;
 
+  const playerTroopCount = state.troops.filter((t) => t.side === "player").length;
   const playerFront = state.troops.reduce(
     (m, t) => (t.side === "player" ? Math.max(m, t.position) : m),
     -1,
@@ -274,21 +275,30 @@ export default function ArenaOnlineScreen({ onExit }: { onExit?: () => void }) {
       <Animated.View style={[s.match, { transform: [{ translateX: shakeX }] }]}>
         <View style={s.row}>
           <Text style={s.caption}>ARENA RUSH · 1 × 1</Text>
-          <Text
-            accessibilityLabel={`Tempo restante: ${Math.ceil(state.timeRemaining)} segundos`}
-            style={{
-              fontSize: 20,
-              fontWeight: "900",
-              color: state.timeRemaining <= 15 ? palette.red : palette.text,
-              fontVariant: ["tabular-nums"],
-            }}
-          >
-            {Math.floor(Math.max(0, Math.ceil(state.timeRemaining)) / 60)}:
-            {String(Math.max(0, Math.ceil(state.timeRemaining)) % 60).padStart(
-              2,
-              "0",
-            )}
-          </Text>
+          {state.overtimeElapsed > 0 ? (
+            <Text
+              accessibilityLabel="Prorrogação: empate no tempo normal, decide no próximo acerto na base"
+              accessibilityLiveRegion="polite"
+              style={{ fontSize: 16, fontWeight: "900", color: palette.amber }}
+            >
+              PRORROGAÇÃO
+            </Text>
+          ) : (
+            <Text
+              accessibilityLabel={`Tempo restante: ${Math.ceil(state.timeRemaining)} segundos`}
+              style={{
+                fontSize: 20,
+                fontWeight: "900",
+                color: state.timeRemaining <= 15 ? palette.red : palette.text,
+                fontVariant: ["tabular-nums"],
+              }}
+            >
+              {Math.floor(Math.max(0, Math.ceil(state.timeRemaining)) / 60)}:
+              {String(
+                Math.max(0, Math.ceil(state.timeRemaining)) % 60,
+              ).padStart(2, "0")}
+            </Text>
+          )}
         </View>
         {socket.phase === "reconnecting" && (
           <View style={s.reconnectingBanner} accessibilityLiveRegion="polite">
@@ -332,6 +342,11 @@ export default function ArenaOnlineScreen({ onExit }: { onExit?: () => void }) {
                   ? socket.me?.avatar
                   : socket.opponent?.avatar
               }
+              frontline={
+                troop.side === "player"
+                  ? troop.position === playerFront
+                  : troop.position === enemyFront
+              }
             />
           ))}
           {poofs.map((p) => (
@@ -373,10 +388,6 @@ export default function ArenaOnlineScreen({ onExit }: { onExit?: () => void }) {
           )}
         </View>
         <View style={{ gap: 4 }}>
-          <Text style={s.caption}>
-            Tropas: {state.troops.filter(t => t.side === "player").length}/{MAX_TROOPS_PER_SIDE}
-            {state.troops.filter(t => t.side === "player").length >= MAX_TROOPS_PER_SIDE ? " · Campo cheio; acertos mantêm o combo." : " · Escolha a próxima invocação"}
-          </Text>
           <View style={{ flexDirection: "row", gap: 4 }}>
             {(Object.keys(TACTICS) as Tactic[]).map((id) => (
               <Pressy
@@ -407,12 +418,19 @@ export default function ArenaOnlineScreen({ onExit }: { onExit?: () => void }) {
               </Pressy>
             ))}
           </View>
+          {/* Uma linha só, não três: contagem de tropas e efeito da postura
+              competiam por atenção com o próprio desafio (o que importa de
+              verdade num jogo de reflexo) — ver ficou muito espremido antes. */}
           <Text style={{ fontSize: 11, color: palette.textDim }}>
-            {tactic === "rush"
-              ? "Próximas tropas: +30% velocidade, −20% vida."
-              : tactic === "guard"
-                ? "Próximas tropas: +30% vida, −20% velocidade."
-                : "Próximas tropas: vida e velocidade normais."}
+            {playerTroopCount >= MAX_TROOPS_PER_SIDE
+              ? "Campo cheio — acertos mantêm o combo, sem invocar mais."
+              : `${playerTroopCount}/${MAX_TROOPS_PER_SIDE} tropas · ${
+                  tactic === "rush"
+                    ? "próxima: +30% velocidade, −20% vida"
+                    : tactic === "guard"
+                      ? "próxima: +30% vida, −20% velocidade"
+                      : "próxima com atributos normais"
+                }`}
           </Text>
         </View>
         <View style={s.panel}>
