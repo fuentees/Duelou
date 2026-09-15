@@ -33,7 +33,10 @@
 - **Jogos de alternativa** (`src/arcade/Round.tsx`): ao responder, a rodada segura por um instante (450ms acertando, 1500ms errando) mostrando ✓ na certa e ✗ na tocada, com a resposta e a `explanation` da rodada (que existia em `shared/arcade.mjs` e nunca chegava à tela). O cronômetro é adiado pelo mesmo tempo — o veredito não pode custar prova. Só no solo: online o servidor não manda gabarito.
 - **Memória**: erro mostra qual era o bloco certo e em que passo antes de encerrar. **Mira**: toques no vazio são contados e exibidos durante a prova (não pontuam — pontuação continua do servidor).
 - **Telas**: escolha de modo do jogo, topo da Arena, perfil, configurações (era "Som e música") e menu foram reorganizados em cartões; a lista de jogos mostra fase/estrelas por jogo (`readAllCampaigns`); a tela inicial tem "continuar de onde parou" (abre o jogo direto via `initialGame` em ArcadeScreen) e o cartel do duelo; o resultado da fase mostra meta com barra e "o que escapou".
+- **Salas** (`src/arcade/RoomView.tsx` + criação em `BrowseView.tsx`): código aparece uma vez, com rótulo e explicação (antes vinha miúdo no topo e enorme sem nome no meio); lista de quem está na sala mostra o personagem de cada um; capacidade tem barra; as três portas do multijogador e as quatro escolhas de "Criar sala" passaram a dizer o que decidem.
+- **Entrada** (`src/live/AuthScreen.tsx`): o cabeçalho lista o que o app tem, o apelido inválido explica o que falta em vez de só desligar o botão, e o erro aparece junto da ação.
 - Scripts de navegação (`check-arena-pvp.mjs`, `check-rush-polish.mjs`, `check-accessibility.mjs`) acompanham os rótulos novos ("Duelo" na barra, "Configurações" no menu).
+- Atenção: `npm run check:bundle` está em 916 KB de um teto de 920 KB. A próxima adição grande precisa de corte ou de uma revisão consciente do orçamento (o número está comentado em `scripts/check-bundle.mjs`).
 
 ## Capacidade de sala, personagem pseudo-3D e reconexão fora da Arena Rush (Tickets 27-46)
 
