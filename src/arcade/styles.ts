@@ -184,6 +184,21 @@ export const s = StyleSheet.create({
   tabActive: { backgroundColor: palette.surfaceRaised },
   tabText: { fontSize: 13, color: palette.textDim, fontWeight: "600" },
   tabTextActive: { color: palette.text },
+  memberLine: { flexDirection: "row", alignItems: "center", gap: 10, flex: 1, minWidth: 0 },
+  codeBox: {
+    gap: 6,
+    padding: 16,
+    borderRadius: radius.lg,
+    backgroundColor: palette.surfaceAlt,
+    alignItems: "center",
+  },
+  capacityTrack: {
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: palette.surfaceAlt,
+    overflow: "hidden",
+  },
+  capacityFill: { height: 8, borderRadius: 4, backgroundColor: palette.violet },
   presencePill: {
     borderRadius: radius.pill,
     paddingHorizontal: 10,

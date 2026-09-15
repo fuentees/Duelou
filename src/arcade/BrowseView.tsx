@@ -385,15 +385,39 @@ export default function BrowseView(p: Props) {
                 Salas casuais. Resultados não alteram sua classificação
                 competitiva.
               </Text>
-              <Button disabled={p.busy} onPress={p.onFindOpponent}>
-                Encontrar partida
-              </Button>
-              <Button secondary onPress={() => setStep("join")}>
-                Entrar em uma sala
-              </Button>
-              <Button secondary onPress={() => setStep("create")}>
-                Criar sala
-              </Button>
+              {/* Três botões que não diziam a diferença entre si: "Encontrar
+                  partida" e "Criar sala" levam a lugares bem diferentes e só o
+                  nome não separava um do outro. */}
+              <View style={v.choice}>
+                <Text style={v.choiceTitle}>Partida rápida</Text>
+                <Text style={v.description}>
+                  Entra numa sala pública de duas pessoas com quem estiver
+                  procurando agora.
+                </Text>
+                <Button disabled={p.busy} onPress={p.onFindOpponent}>
+                  Encontrar partida
+                </Button>
+              </View>
+              <View style={v.choice}>
+                <Text style={v.choiceTitle}>Sala de alguém</Text>
+                <Text style={v.description}>
+                  Já tem um código de 8 caracteres? Entre direto nela.
+                </Text>
+                <Button secondary onPress={() => setStep("join")}>
+                  Entrar em uma sala
+                </Button>
+              </View>
+              <View style={v.choice}>
+                <Text style={v.choiceTitle}>Sua sala</Text>
+                <Text style={v.description}>
+                  Escolha nível, formato e quantas pessoas cabem — até{" "}
+                  {ROOM_CAPACITIES[ROOM_CAPACITIES.length - 1]}, para a turma
+                  inteira. Você recebe um código para chamar todo mundo.
+                </Text>
+                <Button secondary onPress={() => setStep("create")}>
+                  Criar sala
+                </Button>
+              </View>
             </>
           ) : step === "create" ? (
             <>

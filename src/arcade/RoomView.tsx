@@ -132,7 +132,9 @@ export default function RoomView({
   return (
     <>
       <View style={[s.row,{flexWrap:"wrap"}]}>
-        <Text style={s.eyebrow}>SALA {room.code}</Text>
+        <Text style={s.eyebrow}>
+          {room.ranked ? "PARTIDA COMPETITIVA" : "SALA"}
+        </Text>
         <LiveStatus mode="inline" state={connectionStatus} />
       </View>
       <Text style={s.title}>{game.name}</Text>
@@ -196,6 +198,21 @@ export default function RoomView({
                 : "Procurando alguém para uma partida casual…"
               : `${room.members.length} de ${room.capacity} jogadores. O anfitrião pode começar com pelo menos dois conectados.`}
           </Text>
+          {!(room.public && room.capacity === 2 && room.members.length === 1) && (
+            <View
+              accessibilityRole="progressbar"
+              accessibilityLabel={`${room.members.length} de ${room.capacity} lugares ocupados`}
+              accessibilityValue={{ min: 0, max: room.capacity, now: room.members.length }}
+              style={s.capacityTrack}
+            >
+              <View
+                style={[
+                  s.capacityFill,
+                  { width: `${Math.round((100 * room.members.length) / Math.max(1, room.capacity))}%` as `${number}%` },
+                ]}
+              />
+            </View>
+          )}
           <Card>
             {room.members.length > 6 ? (
               <View style={s.memberGrid}>
@@ -223,11 +240,17 @@ export default function RoomView({
               </View>
             ) : (
               room.members.map((m) => (
-                <View style={[s.row,{flexWrap:"wrap"}]} key={m.id}>
-                  <Text style={s.member}>
-                    {m.name}
-                    {m.id === room.host ? " · anfitrião" : ""}
-                  </Text>
+                <View style={[s.row, { flexWrap: "wrap" }]} key={m.id}>
+                  {/* O personagem que a pessoa montou aparece na Arena Rush e
+                      no ranking, e faltava justamente aqui — a sala é onde a
+                      turma se encontra. */}
+                  <View style={s.memberLine}>
+                    <Character avatar={m.avatar} size={32} />
+                    <Text style={s.member} numberOfLines={1}>
+                      {m.name}
+                      {m.id === room.host ? " · anfitrião" : ""}
+                    </Text>
+                  </View>
                   <View
                     style={[
                       s.presencePill,
@@ -247,9 +270,24 @@ export default function RoomView({
               Treinar enquanto procura
             </Button>
           )}
-          <Text selectable style={s.roomCode}>
-            {room.code}
-          </Text>
+          {!room.ranked && (
+            <View style={s.codeBox}>
+              {/* O código aparecia duas vezes — miúdo no topo e grande sem
+                  rótulo no meio da tela. Agora aparece uma vez, dito o que é,
+                  junto do botão de chamar gente. */}
+              <Text style={s.eyebrow}>CÓDIGO DA SALA</Text>
+              <Text
+                selectable
+                style={s.roomCode}
+                accessibilityLabel={`Código da sala: ${room.code.split("").join(" ")}`}
+              >
+                {room.code}
+              </Text>
+              <Text style={s.caption}>
+                Quem tiver este código entra direto, mesmo em sala só por convite.
+              </Text>
+            </View>
+          )}
           {!room.ranked && (
             <Button
               secondary
