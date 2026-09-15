@@ -7,7 +7,7 @@ const center = points => points[0].map((_, i) => points.reduce((n, p) => n + p[i
 
 // Real XYZ mesh, independent of the renderer. Low polygon counts keep portraits
 // cheap; the same geometry can be exported to a GPU renderer later.
-export function characterMesh(raw, detailed = false) {
+export function characterMesh(raw, detailed = false, compact = false) {
   const avatar = readAvatar(raw);
   const color = avatarOptions.color.find(c => c.id === avatar.color).hex;
   const faces = [];
@@ -21,7 +21,7 @@ export function characterMesh(raw, detailed = false) {
     for (const indices of [[0,1,3,2],[4,6,7,5],[0,4,5,1],[2,3,7,6],[0,2,6,4],[1,5,7,3]]) face(indices.map(i => points[i]), origin, color);
   }
   function oval(origin, size, color, power = 1) {
-    const slices = detailed ? 12 : 8, rings = detailed ? 8 : 6;
+    const slices = compact ? 6 : detailed ? 12 : 8, rings = compact ? 4 : detailed ? 8 : 6;
     const shape = n => Math.sign(n) * Math.pow(Math.abs(n), power);
     const point = (r, s) => {
       const lat = -Math.PI / 2 + Math.PI * r / rings, lon = 2 * Math.PI * s / slices;

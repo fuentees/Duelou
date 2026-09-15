@@ -30,10 +30,12 @@ export default function ChallengePanel({
   onSubmit,
   verdict,
   reflexGo,
+  disabled = false,
 }: {
   challenge: ArenaChallenge | PublicArenaChallenge;
   onAnswer?: (correct: boolean, elapsedMs: number) => void;
-  onSubmit?: (payload: SubmitPayload, elapsedMs: number) => void;
+  onSubmit?: (payload: SubmitPayload, elapsedMs: number) => boolean | void;
+  disabled?: boolean;
   verdict?: { correct: boolean } | null;
   reflexGo?: boolean;
 }) {
@@ -81,11 +83,11 @@ export default function ChallengePanel({
   }, [reflexGo]);
 
   const answerChoice = (index: number) => {
-    if (tapped) return;
+    if (tapped || disabled) return;
     const elapsedMs = performance.now() - shownAt.current;
     if (online) {
-      setTapped({ index, correct: null });
-      onSubmit!({ index }, elapsedMs);
+      if (onSubmit!({ index }, elapsedMs) !== false)
+        setTapped({ index, correct: null });
       return;
     }
     if (challenge.kind !== "choice" || !("answerIndex" in challenge)) return;
@@ -95,11 +97,12 @@ export default function ChallengePanel({
   };
 
   const answerReflex = () => {
-    if (tapped || challenge.kind !== "reflex") return;
+    if (tapped || disabled || challenge.kind !== "reflex") return;
     if (online) {
-      const elapsedMs = reflexPhase === "go" ? performance.now() - goAt.current : 0;
-      setTapped({ reflex: true, correct: null });
-      onSubmit!({ tapped: true }, elapsedMs);
+      const elapsedMs =
+        reflexPhase === "go" ? performance.now() - goAt.current : 0;
+      if (onSubmit!({ tapped: true }, elapsedMs) !== false)
+        setTapped({ reflex: true, correct: null });
       return;
     }
     if (reflexPhase === "waiting") {
@@ -112,7 +115,11 @@ export default function ChallengePanel({
   };
 
   const tone = (correct: boolean | null | undefined) =>
-    correct === true ? palette.green : correct === false ? palette.red : "#8A7FF5"; // pendente: nem acerto nem erro
+    correct === true
+      ? palette.green
+      : correct === false
+        ? palette.red
+        : "#8A7FF5"; // pendente: nem acerto nem erro
 
   if (challenge.kind === "reflex") {
     const label = reflexPhase === "go" ? "TOQUE!" : "ESPERE…";
@@ -120,8 +127,10 @@ export default function ChallengePanel({
     return (
       <View style={s.panel}>
         <Pressy
-          disabled={!!tapped}
-          accessibilityLabel={pending ? `${label} (respondido, aguardando resultado)` : label}
+          disabled={disabled || !!tapped}
+          accessibilityLabel={
+            pending ? `${label} (respondido, aguardando resultado)` : label
+          }
           onPress={answerReflex}
           outerStyle={s.reflexButton}
           style={[
@@ -145,7 +154,10 @@ export default function ChallengePanel({
   return (
     <View style={s.panel}>
       <Text
-        style={[s.prompt, challenge.promptColor ? { color: challenge.promptColor } : null]}
+        style={[
+          s.prompt,
+          challenge.promptColor ? { color: challenge.promptColor } : null,
+        ]}
       >
         {challenge.prompt}
       </Text>
@@ -156,15 +168,19 @@ export default function ChallengePanel({
           return (
             <Pressy
               key={i}
-              disabled={!!tapped}
+              disabled={disabled || !!tapped}
               accessibilityLabel={
-                pending ? `Opção ${i + 1}: ${opt} (respondida, aguardando resultado)` : `Opção ${i + 1}: ${opt}`
+                pending
+                  ? `Opção ${i + 1}: ${opt} (respondida, aguardando resultado)`
+                  : `Opção ${i + 1}: ${opt}`
               }
               onPress={() => answerChoice(i)}
               outerStyle={s.option}
               style={[
                 s.optionInner,
-                challenge.optionColors ? { backgroundColor: challenge.optionColors[i] } : null,
+                challenge.optionColors
+                  ? { backgroundColor: challenge.optionColors[i] }
+                  : null,
                 isTapped ? { backgroundColor: tone(tapped!.correct) } : null,
               ]}
             >
@@ -179,7 +195,12 @@ export default function ChallengePanel({
 
 const s = StyleSheet.create({
   panel: { gap: 10 },
-  prompt: { fontSize: 22, fontWeight: "800", color: palette.text, textAlign: "center" },
+  prompt: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: palette.text,
+    textAlign: "center",
+  },
   options: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   option: { flexGrow: 1, flexBasis: "45%" },
   optionInner: {
@@ -192,6 +213,11 @@ const s = StyleSheet.create({
   },
   optionText: { fontSize: 17, fontWeight: "800", color: palette.text },
   reflexButton: { width: "100%" },
-  reflexInner: { minHeight: 96, borderRadius: radius.md, alignItems: "center", justifyContent: "center" },
+  reflexInner: {
+    minHeight: 96,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   reflexText: { color: "#FFFFFF", fontSize: 20, fontWeight: "900" },
 });

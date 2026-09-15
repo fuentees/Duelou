@@ -4,29 +4,34 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import type { Troop as TroopData, TroopType } from "../../shared/arena/engine";
 import useReducedMotion from "../useReducedMotion";
 import { ENEMY_COLOR, PLAYER_COLOR } from "./colors";
-import { LinearGradient } from "expo-linear-gradient";
-import { shade } from "../theme";
+import Character from "../components/Character";
 
 // Diferencia por forma/tamanho, não só cor — scout pequeno e ágil, tank
 // grande e pesado; cada um com um ícone próprio, pra não depender de
 // enxergar a diferença entre azul e rosa (daltonismo).
-const TROOP_VISUAL: Record<TroopType, { size: number; icon: keyof typeof Ionicons.glyphMap }> = {
-  scout: { size: 24, icon: "flash" },
-  soldier: { size: 32, icon: "person" },
-  tank: { size: 46, icon: "shield" },
+const TROOP_VISUAL: Record<
+  TroopType,
+  { size: number; icon: keyof typeof Ionicons.glyphMap }
+> = {
+  scout: { size: 42, icon: "flash" },
+  soldier: { size: 50, icon: "person" },
+  tank: { size: 60, icon: "shield" },
 };
 
 export default function Troop({
   troop,
   laneHeight,
+  avatar,
 }: {
   troop: TroopData;
   laneHeight: number;
+  avatar?: unknown;
 }) {
   const reducedMotion = useReducedMotion();
   const visual = TROOP_VISUAL[troop.type];
   const color = troop.side === "player" ? PLAYER_COLOR : ENEMY_COLOR;
-  const targetTop = laneHeight * (1 - troop.position / 100);
+  const targetTop =
+    Math.max(0, laneHeight - visual.size) * (1 - troop.position / 100);
 
   const scale = useRef(new Animated.Value(reducedMotion ? 1 : 0.3)).current;
   const top = useRef(new Animated.Value(targetTop)).current;
@@ -78,28 +83,39 @@ export default function Troop({
         transform: [{ scale }],
       }}
     >
-      <LinearGradient
-        colors={[shade(color, 0.3), color, shade(color, -0.35)]}
-        start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+      <Character
+        avatar={avatar}
+        size={visual.size}
+        framed={false}
+        yaw={troop.side === "player" ? -0.5 : 0.5}
+      />
+      <View
         style={{
-          width: visual.size,
-          height: visual.size,
-          borderRadius: visual.size * (troop.type === "tank" ? 0.22 : troop.type === "soldier" ? 0.35 : 0.5),
-          borderWidth: 2,
-          borderColor: "#FFFFFF",
+          position: "absolute",
+          right: -3,
+          bottom: 0,
           backgroundColor: color,
-          alignItems: "center",
-          justifyContent: "center",
-          // Fica visivelmente mais "pálido" conforme perde vida — mais um
-          // sinal, além da cor do lado, de que algo está acontecendo com ela.
-          opacity: 0.45 + 0.55 * hpRatio,
+          borderRadius: 8,
+          padding: 2,
         }}
       >
-        <View style={{ width: visual.size * 0.65, height: visual.size * 0.27, borderRadius: 5, backgroundColor: "#18233B", flexDirection: "row", justifyContent: "space-evenly", alignItems: "center" }}>
-          {[0, 1].map(eye => <View key={eye} style={{ width: 3, height: 4, borderRadius: 1, backgroundColor: "#E1FFF8" }} />)}
-        </View>
-        <Ionicons name={visual.icon} size={visual.size * 0.26} color="#FFFFFF" />
-      </LinearGradient>
+        <Ionicons name={visual.icon} size={11} color="#FFFFFF" />
+      </View>
+      {troop.tactic && troop.tactic !== "balanced" && (
+        <Text
+          style={{
+            position: "absolute",
+            left: -4,
+            bottom: 0,
+            fontSize: 10,
+            color,
+            fontWeight: "900",
+          }}
+        >
+          {troop.tactic === "rush" ? "»" : "+"}
+        </Text>
+      )}
+
       {/* Barrinha de vida — sem isso, a troca de dano no combate é uma caixa
           preta: dá pra ver o ícone perdendo cor, mas não "quanto falta". */}
       {hpRatio < 1 && (

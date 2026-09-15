@@ -28,6 +28,12 @@ export default function ArenaLobby({ avatar, onExit }: { avatar?: unknown; onExi
       <Button onPress={() => setPlaying(true)}>Buscar adversário</Button>
       <Text style={s.note}>A busca começa ao tocar no botão. Você pode cancelar enquanto espera.</Text>
       <Card>
+        <Text style={s.heading}>Comande seu exército 3D</Text>
+        <Text style={s.note}>Seu personagem vira suas tropas. Escolha a postura antes de responder: ela afeta apenas as próximas invocações, sem mudar as que já estão no campo.</Text>
+        <Text style={s.note}>Investida: +30% velocidade e −20% vida. Use para pressionar a pista livre.</Text>
+        <Text style={s.note}>Guarda: +30% vida e −20% velocidade. Use para segurar a linha de frente. Equilíbrio mantém os atributos normais.</Text>
+      </Card>
+      <Card>
         <Text style={s.heading}>Seu primeiro duelo, sem mistério</Text>
         {[
           ["01", "Acerte para invocar", "Cada acerto envia uma tropa. Ela avança e luta automaticamente."],

@@ -10,7 +10,9 @@ animação esquelética. A ordenação por profundidade é adequada a estes retr
 simples; não substitui um depth buffer para cenários complexos com interseções.
 
 O componente compartilhado atende login, início, perfil, editor, ranking e
-apresentações de batalha. As tropas em combate mantêm seu renderizador próprio.
+apresentações de batalha. As tropas online também usam o modelo 3D do dono,
+sem moldura, com emblema de classe e cor do time. O movimento permanece
+separado da geometria memorizada; batedores, soldados e tanques têm tamanhos distintos.
 No editor, as setas giram 45 graus e Frente restaura a vista inicial. A câmera
 não faz parte do avatar salvo. Cores, acessórios e molduras continuam compatíveis
 com as 108 combinações e com contas existentes.

@@ -6,6 +6,7 @@ import { ENEMY_COLOR, PLAYER_COLOR } from "./colors";
 import type { ArenaState } from "../../shared/arena/engine";
 import Character from "../components/Character";
 import { LinearGradient } from "expo-linear-gradient";
+import { matchAdvice } from "../../shared/arena/feedback";
 
 const err = (e: unknown) => (e instanceof Error ? e.message : "Algo deu errado.");
 
@@ -61,7 +62,7 @@ export default function ResultCard({
   const shareText = [
     "Duelou · Arena Rush",
     `${outcome} — base final ${Math.round(state.playerBaseHp)} × ${Math.round(state.enemyBaseHp)}`,
-    `Maior combo: x${stats.maxCombo} · ${stats.hits} bonecos invocados · ${accuracy}% de acerto`,
+    `Maior combo: x${stats.maxCombo} · ${stats.troopsSpawned} tropas invocadas · ${accuracy}% de acerto`,
     highlight,
   ].join("\n");
 
@@ -88,15 +89,12 @@ export default function ResultCard({
       </View>
       <View style={s.statsRow}>
         <Text style={s.stat}>🔥 combo máx. x{stats.maxCombo}</Text>
-        <Text style={s.stat}>⚔ {stats.hits} bonecos</Text>
+        <Text style={s.stat}>⚔ {stats.troopsSpawned} tropas invocadas</Text>
+        <Text style={s.stat}>{stats.hits}/{stats.challengesTotal} desafios corretos</Text>
         <Text style={s.stat}>🎯 {accuracy}% de acerto</Text>
       </View>
       <Text style={s.highlight}>
-        {stats.challengesTotal === 0
-          ? "Responda aos desafios para invocar suas tropas."
-          : accuracy < 70
-            ? "Na próxima: priorize acertar para manter suas tropas em campo."
-            : "Na próxima: combine precisão e velocidade para invocar tropas mais fortes."}
+        {matchAdvice(state)}
       </Text>
       {showTutorialInfo && (
         <View style={s.tutorialBox}>

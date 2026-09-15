@@ -16,6 +16,9 @@ import { palette, radius } from "../theme";
 import Button from "../components/Button";
 import LiveStatus from "../components/LiveStatus";
 import Battlefield from "./Battlefield";
+import { invocationText } from "../../shared/arena/feedback";
+import Pressy from "../components/Pressy";
+import { TACTICS, MAX_TROOPS_PER_SIDE, type Tactic } from "../../shared/arena/engine";
 
 // Quanto tempo o "poof" fica visível depois de uma tropa sumir (ver o
 // comentário de EDGE_THRESHOLD abaixo sobre como decidimos "morreu" vs
@@ -37,6 +40,14 @@ type Poof = { key: number; position: number; side: Side };
 
 export default function ArenaOnlineScreen({ onExit }: { onExit?: () => void }) {
   const socket = useArenaSocket();
+  const [tactic, setTactic] = useState<Tactic>("balanced");
+  const [showFeedback, setShowFeedback] = useState(false);
+  useEffect(() => {
+    if (!socket.lastAnswer) return;
+    setShowFeedback(true);
+    const timer = setTimeout(() => setShowFeedback(false), 2200);
+    return () => clearTimeout(timer);
+  }, [socket.lastAnswer]);
   const reducedMotion = useReducedMotion();
   const [laneHeight, setLaneHeight] = useState(0);
   const [poofs, setPoofs] = useState<Poof[]>([]);
@@ -45,6 +56,25 @@ export default function ArenaOnlineScreen({ onExit }: { onExit?: () => void }) {
   const shakeX = useRef(new Animated.Value(0)).current;
   const prevStateRef = useRef<ArenaState | null>(null);
   const wasCriticalRef = useRef(false);
+  const [shareError, setShareError] = useState("");
+  const effectTimers = useRef(new Set<ReturnType<typeof setTimeout>>());
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const later = (callback: () => void, delay: number) => {
+    const timer = setTimeout(() => {
+      effectTimers.current.delete(timer);
+      callback();
+    }, delay);
+    effectTimers.current.add(timer);
+    return timer;
+  };
+  useEffect(
+    () => () => {
+      effectTimers.current.forEach(clearTimeout);
+      effectTimers.current.clear();
+      shakeX.stopAnimation();
+    },
+    [shakeX],
+  );
 
   useEffect(() => {
     const prev = prevStateRef.current;
@@ -56,29 +86,66 @@ export default function ArenaOnlineScreen({ onExit }: { onExit?: () => void }) {
     const newPoofs: Poof[] = [];
     for (const t of prev.troops) {
       if (currentIds.has(t.id)) continue;
-      const nearEdge = t.side === "player" ? t.position >= 100 - EDGE_THRESHOLD : t.position <= EDGE_THRESHOLD;
-      if (!nearEdge) newPoofs.push({ key: poofSeq.current++, position: t.position, side: t.side });
+      const nearEdge =
+        t.side === "player"
+          ? t.position >= 100 - EDGE_THRESHOLD
+          : t.position <= EDGE_THRESHOLD;
+      if (!nearEdge)
+        newPoofs.push({
+          key: poofSeq.current++,
+          position: t.position,
+          side: t.side,
+        });
     }
-    if (newPoofs.length) {
+    if (newPoofs.length && !reducedMotion) {
       setPoofs((p) => [...p, ...newPoofs]);
       newPoofs.forEach((p) => {
-        setTimeout(() => setPoofs((prevPoofs) => prevPoofs.filter((x) => x.key !== p.key)), POOF_DURATION_MS);
+        later(
+          () =>
+            setPoofs((prevPoofs) => prevPoofs.filter((x) => x.key !== p.key)),
+          POOF_DURATION_MS,
+        );
       });
     }
 
     const hitPlayer = current.playerBaseHp < prev.playerBaseHp;
     const hitEnemy = current.enemyBaseHp < prev.enemyBaseHp;
     if (hitPlayer || hitEnemy) {
-      setBaseFlash({ player: hitPlayer, enemy: hitEnemy });
-      setTimeout(() => setBaseFlash({ player: false, enemy: false }), BASE_FLASH_MS);
+      if (!reducedMotion) {
+        setBaseFlash({ player: hitPlayer, enemy: hitEnemy });
+        if (flashTimer.current) {
+          clearTimeout(flashTimer.current);
+          effectTimers.current.delete(flashTimer.current);
+        }
+        flashTimer.current = later(
+          () => setBaseFlash({ player: false, enemy: false }),
+          BASE_FLASH_MS,
+        );
+      }
       if (hitPlayer) playFail();
       if (!reducedMotion) {
         shakeX.setValue(0);
         Animated.sequence([
-          Animated.timing(shakeX, { toValue: 6, duration: 40, useNativeDriver: true }),
-          Animated.timing(shakeX, { toValue: -6, duration: 40, useNativeDriver: true }),
-          Animated.timing(shakeX, { toValue: 3, duration: 40, useNativeDriver: true }),
-          Animated.timing(shakeX, { toValue: 0, duration: 40, useNativeDriver: true }),
+          Animated.timing(shakeX, {
+            toValue: 6,
+            duration: 40,
+            useNativeDriver: true,
+          }),
+          Animated.timing(shakeX, {
+            toValue: -6,
+            duration: 40,
+            useNativeDriver: true,
+          }),
+          Animated.timing(shakeX, {
+            toValue: 3,
+            duration: 40,
+            useNativeDriver: true,
+          }),
+          Animated.timing(shakeX, {
+            toValue: 0,
+            duration: 40,
+            useNativeDriver: true,
+          }),
         ]).start();
       }
     }
@@ -122,8 +189,18 @@ export default function ArenaOnlineScreen({ onExit }: { onExit?: () => void }) {
     const members: BattleMember[] =
       socket.me && socket.opponent
         ? [
-            { id: socket.me.id, name: socket.me.name, avatar: socket.me.avatar, seriesWins: 0 },
-            { id: socket.opponent.id, name: socket.opponent.name, avatar: socket.opponent.avatar, seriesWins: 0 },
+            {
+              id: socket.me.id,
+              name: socket.me.name,
+              avatar: socket.me.avatar,
+              seriesWins: 0,
+            },
+            {
+              id: socket.opponent.id,
+              name: socket.opponent.name,
+              avatar: socket.opponent.avatar,
+              seriesWins: 0,
+            },
           ]
         : [];
     return (
@@ -144,7 +221,14 @@ export default function ArenaOnlineScreen({ onExit }: { onExit?: () => void }) {
   if (socket.phase === "ended" && state) {
     return (
       <SafeAreaView style={s.screen}>
-        <ScrollView contentContainerStyle={[s.center, { flex: undefined, flexGrow: 1 }]}>
+        <ScrollView
+          contentContainerStyle={[s.center, { flex: undefined, flexGrow: 1 }]}
+        >
+          {!!shareError && (
+            <Text accessibilityRole="alert" style={{ color: palette.red }}>
+              {shareError}
+            </Text>
+          )}
           {socket.opponentLeft && (
             <Text style={s.opponentLeft} accessibilityLiveRegion="polite">
               Seu adversário saiu da partida.
@@ -158,17 +242,28 @@ export default function ArenaOnlineScreen({ onExit }: { onExit?: () => void }) {
             onRematch={handleExit}
             rematchLabel="Voltar para jogar"
             onMenu={handleExit}
-            onError={() => {}}
+            onError={() =>
+              setShareError(
+                "Não foi possível compartilhar. Tente novamente pelo botão abaixo.",
+              )
+            }
           />
         </ScrollView>
       </SafeAreaView>
     );
   }
 
-  if (!state) return <MatchmakingScreen status="connecting" onCancel={handleExit} />;
+  if (!state)
+    return <MatchmakingScreen status="connecting" onCancel={handleExit} />;
 
-  const playerFront = state.troops.reduce((m, t) => (t.side === "player" ? Math.max(m, t.position) : m), -1);
-  const enemyFront = state.troops.reduce((m, t) => (t.side === "enemy" ? Math.min(m, t.position) : m), 101);
+  const playerFront = state.troops.reduce(
+    (m, t) => (t.side === "player" ? Math.max(m, t.position) : m),
+    -1,
+  );
+  const enemyFront = state.troops.reduce(
+    (m, t) => (t.side === "enemy" ? Math.min(m, t.position) : m),
+    101,
+  );
   const frontLine =
     playerFront >= 0 && enemyFront <= 100 && enemyFront - playerFront <= 10
       ? (playerFront + enemyFront) / 2
@@ -179,15 +274,28 @@ export default function ArenaOnlineScreen({ onExit }: { onExit?: () => void }) {
       <Animated.View style={[s.match, { transform: [{ translateX: shakeX }] }]}>
         <View style={s.row}>
           <Text style={s.caption}>ARENA RUSH · 1 × 1</Text>
-          <Text accessibilityLabel={`Tempo restante: ${Math.ceil(state.timeRemaining)} segundos`}
-            style={{ fontSize: 20, fontWeight: "900", color: state.timeRemaining <= 15 ? palette.red : palette.text, fontVariant: ["tabular-nums"] }}>
-            {Math.floor(Math.max(0, Math.ceil(state.timeRemaining)) / 60)}:{String(Math.max(0, Math.ceil(state.timeRemaining)) % 60).padStart(2, "0")}
+          <Text
+            accessibilityLabel={`Tempo restante: ${Math.ceil(state.timeRemaining)} segundos`}
+            style={{
+              fontSize: 20,
+              fontWeight: "900",
+              color: state.timeRemaining <= 15 ? palette.red : palette.text,
+              fontVariant: ["tabular-nums"],
+            }}
+          >
+            {Math.floor(Math.max(0, Math.ceil(state.timeRemaining)) / 60)}:
+            {String(Math.max(0, Math.ceil(state.timeRemaining)) % 60).padStart(
+              2,
+              "0",
+            )}
           </Text>
         </View>
         {socket.phase === "reconnecting" && (
           <View style={s.reconnectingBanner} accessibilityLiveRegion="polite">
             <LiveStatus mode="inline" state="reconnecting" />
-            <Text style={s.reconnectingBannerText}>Reconectando você à partida…</Text>
+            <Text style={s.reconnectingBannerText}>
+              Reconectando você à partida…
+            </Text>
           </View>
         )}
         <HealthBar
@@ -197,16 +305,34 @@ export default function ArenaOnlineScreen({ onExit }: { onExit?: () => void }) {
           flash={baseFlash.enemy}
           danger={state.enemyBaseHp < DANGER_THRESHOLD}
         />
-        <View style={s.lane} onLayout={(e) => setLaneHeight(e.nativeEvent.layout.height)}>
+        <View
+          style={s.lane}
+          onLayout={(e) => setLaneHeight(e.nativeEvent.layout.height)}
+        >
           <Battlefield />
+          {showFeedback && socket.lastAnswer && <View pointerEvents="none" style={{ position: "absolute", top: 12, left: 8, right: 8, zIndex: 10, padding: 10, borderRadius: 12, backgroundColor: "#FFFFFFEE" }}>
+            <Text accessibilityLiveRegion="polite" style={{ color: socket.lastAnswer.correct ? palette.green : palette.red, fontSize: 12, fontWeight: "800", textAlign: "center" }}>{invocationText(socket.lastAnswer)}</Text>
+          </View>}
           {frontLine !== null && (
             <View
               accessibilityElementsHidden
-              style={[s.frontLine, { top: laneHeight * (1 - frontLine / 100) - 1 }]}
+              style={[
+                s.frontLine,
+                { top: laneHeight * (1 - frontLine / 100) - 1 },
+              ]}
             />
           )}
           {state.troops.map((troop) => (
-            <Troop key={troop.id} troop={troop} laneHeight={laneHeight} />
+            <Troop
+              key={troop.id}
+              troop={troop}
+              laneHeight={laneHeight}
+              avatar={
+                troop.side === "player"
+                  ? socket.me?.avatar
+                  : socket.opponent?.avatar
+              }
+            />
           ))}
           {poofs.map((p) => (
             <Text
@@ -233,8 +359,12 @@ export default function ArenaOnlineScreen({ onExit }: { onExit?: () => void }) {
         />
         <View style={s.row}>
           <View style={s.opponentNameRow}>
-            <Text style={s.caption}>{socket.opponent?.name || "Adversário"}</Text>
-            {socket.opponentReconnecting && <LiveStatus mode="inline" state="reconnecting" />}
+            <Text style={s.caption}>
+              {socket.opponent?.name || "Adversário"}
+            </Text>
+            {socket.opponentReconnecting && (
+              <LiveStatus mode="inline" state="reconnecting" />
+            )}
           </View>
           {state.combo.player >= 2 && (
             <Text style={s.combo} accessibilityLiveRegion="polite">
@@ -242,14 +372,67 @@ export default function ArenaOnlineScreen({ onExit }: { onExit?: () => void }) {
             </Text>
           )}
         </View>
+        <View style={{ gap: 4 }}>
+          <Text style={s.caption}>
+            Tropas: {state.troops.filter(t => t.side === "player").length}/{MAX_TROOPS_PER_SIDE}
+            {state.troops.filter(t => t.side === "player").length >= MAX_TROOPS_PER_SIDE ? " · Campo cheio; acertos mantêm o combo." : " · Escolha a próxima invocação"}
+          </Text>
+          <View style={{ flexDirection: "row", gap: 4 }}>
+            {(Object.keys(TACTICS) as Tactic[]).map((id) => (
+              <Pressy
+                key={id}
+                accessibilityRole="radio"
+                accessibilityLabel={`Estratégia: ${TACTICS[id].name}`}
+                accessibilityState={{ checked: tactic === id }}
+                onPress={() => setTactic(id)}
+                outerStyle={{ flex: 1 }}
+                style={{
+                  minHeight: 44,
+                  justifyContent: "center",
+                  alignItems: "center",
+                  borderRadius: 10,
+                  backgroundColor:
+                    tactic === id ? palette.violet : palette.surfaceAlt,
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 12,
+                    fontWeight: "800",
+                    color: tactic === id ? "#FFFFFF" : palette.text,
+                  }}
+                >
+                  {TACTICS[id].name}
+                </Text>
+              </Pressy>
+            ))}
+          </View>
+          <Text style={{ fontSize: 11, color: palette.textDim }}>
+            {tactic === "rush"
+              ? "Próximas tropas: +30% velocidade, −20% vida."
+              : tactic === "guard"
+                ? "Próximas tropas: +30% vida, −20% velocidade."
+                : "Próximas tropas: vida e velocidade normais."}
+          </Text>
+        </View>
         <View style={s.panel}>
+          {(socket.phase !== "playing" || socket.opponentReconnecting) && (
+            <Text accessibilityLiveRegion="polite" style={s.caption}>
+              Partida pausada. Aguarde a reconexão para responder.
+            </Text>
+          )}
           {socket.challenge && (
             <ChallengePanel
               key={socket.challengeId}
               challenge={socket.challenge}
-              onSubmit={(payload) => socket.submitAnswer(payload)}
+              onSubmit={(payload) =>
+                socket.submitAnswer({ ...payload, tactic })
+              }
               verdict={socket.verdict}
               reflexGo={socket.reflexGo}
+              disabled={
+                socket.phase !== "playing" || socket.opponentReconnecting
+              }
             />
           )}
         </View>
@@ -263,20 +446,58 @@ export default function ArenaOnlineScreen({ onExit }: { onExit?: () => void }) {
 
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: palette.bg },
-  center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 16, padding: 24 },
-  match: { flex: 1, padding: 12, gap: 8, width: "100%", maxWidth: 660, alignSelf: "center" },
-  row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  opponentNameRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", flex: 1, minWidth: 0, gap: 8 },
-  caption: { fontSize: 12, fontWeight: "700", color: palette.textFaint, flexShrink: 1 },
+  center: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 16,
+    padding: 24,
+  },
+  match: {
+    flex: 1,
+    padding: 12,
+    gap: 8,
+    width: "100%",
+    maxWidth: 660,
+    alignSelf: "center",
+  },
+  row: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  opponentNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    flex: 1,
+    minWidth: 0,
+    gap: 8,
+  },
+  caption: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: palette.textFaint,
+    flexShrink: 1,
+  },
   combo: { fontSize: 13, fontWeight: "900", color: palette.amber },
-  opponentLeft: { fontSize: 13, fontWeight: "700", color: palette.textDim, textAlign: "center" },
+  opponentLeft: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: palette.textDim,
+    textAlign: "center",
+  },
   reconnectingBanner: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
     alignSelf: "center",
   },
-  reconnectingBannerText: { fontSize: 12, fontWeight: "700", color: palette.textDim },
+  reconnectingBannerText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: palette.textDim,
+  },
   frontLine: {
     position: "absolute",
     left: 0,

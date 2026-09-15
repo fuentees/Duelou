@@ -9,6 +9,7 @@
 // inteiramente independentes (ver arena-queue.mjs e arena-persistence.mjs).
 
 import { WebSocketServer } from "ws";
+import { TACTICS } from "../shared/arena/engine.ts";
 import { randomUUID, createHash } from "node:crypto";
 import { readAvatar } from "../shared/avatar.mjs";
 import { rateLimiter } from "./rate-limit.mjs";
@@ -168,24 +169,31 @@ export function attachArenaRealtime(server, db, clock = Date.now, options = {}) 
   function handleAnswer(ws, uid, msg) {
     limitRequest(`arena_answer:${uid}`, 120);
     const { matchId, challengeId } = msg;
+    const tactic = msg.tactic ?? "balanced";
+    if (typeof tactic !== "string" || !Object.hasOwn(TACTICS, tactic))
+      return send(ws, "error", { message: "Estratégia inválida." });
     if (typeof matchId !== "string" || typeof challengeId !== "string")
       return send(ws, "error", { message: "Mensagem de resposta inválida." });
     const owner = challengeOwner.get(challengeId);
     if (!owner || owner.matchId !== matchId || owner.uid !== uid)
       return send(ws, "error", { message: "Esse desafio não é seu ou já expirou." });
-    challengeOwner.delete(challengeId);
     const match = matches.getMatch(matchId);
     if (!match || match.ended)
       return send(ws, "error", { message: "Essa partida não está mais ativa." });
+    if (match.paused || Date.now() < match.startsAt)
+      return send(ws, "error", { message: "Aguarde a retomada da partida." });
+    challengeOwner.delete(challengeId);
     const submission = msg.tapped ? { tapped: true } : { index: msg.index };
     const result = challenges.submit(challengeId, submission);
     if (!result) return send(ws, "error", { message: "Desafio desconhecido ou já respondido." });
-    const applied = matches.applyAnswer(matchId, uid, result);
+    const applied = matches.applyAnswer(matchId, uid, { ...result, tactic });
     send(ws, "answerResult", {
       matchId,
       challengeId,
       correct: result.correct,
       troopType: applied?.troopType ?? null,
+      tactic,
+      combo: match.state.combo[match.sideOf.get(uid)],
     });
     issueNextChallenge(matchId, uid);
   }

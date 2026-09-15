@@ -7,6 +7,7 @@
 
 import {
   FAST_CHOICE_MS,
+  TACTICS,
   FAST_REFLEX_MS,
   createArenaState,
   decideTroopType,
@@ -98,9 +99,9 @@ export function createArenaMatchEngine({
    * Devolve null se a partida não existe/já acabou ou o uid não participa
    * dela; senão `{ troopType }` (null quando errou, não invoca nada).
    */
-  function applyAnswer(matchId, uid, { correct, elapsedMs, kind }) {
+  function applyAnswer(matchId, uid, { correct, elapsedMs, kind, tactic = "balanced" }) {
     const match = matches.get(matchId);
-    if (!match || match.ended) return null;
+    if (!match || match.ended || match.paused || now() < match.startsAt || !Object.hasOwn(TACTICS, tactic)) return null;
     const side = match.sideOf.get(uid);
     if (!side) return null;
 
@@ -114,9 +115,9 @@ export function createArenaMatchEngine({
     state.stats[side].maxCombo = Math.max(state.stats[side].maxCombo, state.combo[side]);
     const fast = kind === "reflex" ? elapsedMs < FAST_REFLEX_MS : elapsedMs < FAST_CHOICE_MS;
     const troopType = decideTroopType(fast, state.combo[side]);
-    spawn(state, side, troopType);
+    const spawned = spawn(state, side, troopType, tactic);
     state.stats[side].hits++;
-    return { troopType };
+    return { troopType: spawned ? troopType : null };
   }
 
   /**

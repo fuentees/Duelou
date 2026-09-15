@@ -3,7 +3,10 @@ import { WS_URL, getSessionToken } from "../api";
 import type { ArenaState, Side } from "../../shared/arena/engine";
 import type { PublicArenaChallenge } from "./challenges";
 import { toViewerPerspective } from "./perspective";
-import { RECONNECT_BACKOFF_MS, RECONNECT_GRACE_MS } from "../../shared/arena/reconnect";
+import {
+  RECONNECT_BACKOFF_MS,
+  RECONNECT_GRACE_MS,
+} from "../../shared/arena/reconnect";
 
 export type ArenaOpponent = { id: string; name: string; avatar: unknown };
 export type ArenaSocketPhase =
@@ -14,7 +17,7 @@ export type ArenaSocketPhase =
   | "reconnecting"
   | "ended"
   | "error";
-export type AnswerSubmission = { index: number } | { tapped: true };
+export type AnswerSubmission = ({ index: number } | { tapped: true }) & { tactic?: "balanced" | "rush" | "guard" };
 
 // Conecta na Arena Rush online (server/arena-ws.mjs) e entra na fila
 // automaticamente ao abrir — quem usa esse hook já decidiu "quero um
@@ -30,6 +33,7 @@ export type AnswerSubmission = { index: number } | { tapped: true };
 // andamento, recebe "matchResumed" do servidor em vez de cair na fila de
 // novo.
 export default function useArenaSocket() {
+  const [lastAnswer, setLastAnswer] = useState<{ id: string; correct: boolean; troopType: string | null; tactic: string; combo: number } | null>(null);
   const [phase, setPhase] = useState<ArenaSocketPhase>("connecting");
   const [matchId, setMatchId] = useState<string | null>(null);
   const [you, setYou] = useState<Side | null>(null);
@@ -91,7 +95,10 @@ export default function useArenaSocket() {
       }
       setPhaseBoth("reconnecting");
       const attempt = reconnectAttemptRef.current++;
-      const delay = RECONNECT_BACKOFF_MS[Math.min(attempt, RECONNECT_BACKOFF_MS.length - 1)];
+      const delay =
+        RECONNECT_BACKOFF_MS[
+          Math.min(attempt, RECONNECT_BACKOFF_MS.length - 1)
+        ];
       reconnectTimerRef.current = setTimeout(connect, delay);
     }
 
@@ -163,17 +170,22 @@ export default function useArenaSocket() {
             setChallengeId(msg.challengeId);
             setVerdict(null);
             setReflexGo(false);
-            setPhaseBoth(phaseRef.current === "matchFound" ? "playing" : phaseRef.current);
+            setPhaseBoth(
+              phaseRef.current === "matchFound" ? "playing" : phaseRef.current,
+            );
             break;
           case "reflexGo":
             if (msg.challengeId === challengeIdRef.current) setReflexGo(true);
             break;
           case "answerResult":
-            if (msg.challengeId === challengeIdRef.current)
+            if (msg.challengeId === challengeIdRef.current) {
               setVerdict({ correct: msg.correct });
+              setLastAnswer({ id: msg.challengeId, correct: msg.correct === true, troopType: msg.troopType ?? null, tactic: msg.tactic ?? "balanced", combo: msg.combo ?? 0 });
+            }
             break;
           case "state":
-            if (youRef.current) setState(toViewerPerspective(msg.state, youRef.current));
+            if (youRef.current)
+              setState(toViewerPerspective(msg.state, youRef.current));
             break;
           case "opponentDisconnected":
             opponentReconnectingRef.current = true;
@@ -184,7 +196,8 @@ export default function useArenaSocket() {
             setOpponentReconnecting(false);
             break;
           case "matchOver":
-            if (youRef.current) setState(toViewerPerspective(msg.state, youRef.current));
+            if (youRef.current)
+              setState(toViewerPerspective(msg.state, youRef.current));
             setWinner(msg.winner);
             // Se o adversário ainda estava com a reconexão pendente quando a
             // partida acabou, foi o timeout dele que decidiu — equivalente
@@ -194,7 +207,11 @@ export default function useArenaSocket() {
             setPhaseBoth("ended");
             break;
           case "error":
-            setErrorMessage(typeof msg.message === "string" ? msg.message : "Erro desconhecido.");
+            setErrorMessage(
+              typeof msg.message === "string"
+                ? msg.message
+                : "Erro desconhecido.",
+            );
             break;
         }
       };
@@ -213,16 +230,27 @@ export default function useArenaSocket() {
 
   const submitAnswer = useCallback((payload: AnswerSubmission) => {
     const ws = wsRef.current;
-    if (!ws || ws.readyState !== ws.OPEN || !matchIdRef.current || !challengeIdRef.current)
-      return;
-    ws.send(
-      JSON.stringify({
-        type: "answer",
-        matchId: matchIdRef.current,
-        challengeId: challengeIdRef.current,
-        ...payload,
-      }),
-    );
+    if (
+      phaseRef.current !== "playing" ||
+      !ws ||
+      ws.readyState !== ws.OPEN ||
+      !matchIdRef.current ||
+      !challengeIdRef.current
+    )
+      return false;
+    try {
+      ws.send(
+        JSON.stringify({
+          type: "answer",
+          matchId: matchIdRef.current,
+          challengeId: challengeIdRef.current,
+          ...payload,
+        }),
+      );
+      return true;
+    } catch {
+      return false;
+    }
   }, []);
 
   const forfeit = useCallback(() => {
@@ -233,7 +261,8 @@ export default function useArenaSocket() {
 
   const leaveQueue = useCallback(() => {
     const ws = wsRef.current;
-    if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: "leaveQueue" }));
+    if (ws && ws.readyState === ws.OPEN)
+      ws.send(JSON.stringify({ type: "leaveQueue" }));
   }, []);
 
   // Saída deliberada (botão Menu, por exemplo) — nunca deve tentar
@@ -257,6 +286,7 @@ export default function useArenaSocket() {
   }, []);
 
   return {
+    lastAnswer,
     phase,
     matchId,
     you,

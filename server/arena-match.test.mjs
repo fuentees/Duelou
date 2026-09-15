@@ -2,6 +2,58 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createArenaMatchEngine } from "./arena-match.mjs";
 import { decideTroopType, FAST_CHOICE_MS } from "../shared/arena/engine.ts";
+import { TROOP_CONFIG } from "../shared/arena/engine.ts";
+test("campo cheio conta acertos sem anunciar tropas que não nasceram", () => {
+  const { engine } = makeEngine();
+  engine.createMatch("full", "a", "b");
+  const answer = { correct: true, elapsedMs: 9999, kind: "choice", tactic: "guard" };
+  for (let i=0; i<10; i++) assert.ok(engine.applyAnswer("full", "a", answer).troopType);
+  assert.equal(engine.applyAnswer("full", "a", answer).troopType, null);
+  const state = engine.getMatch("full").state;
+  assert.equal(state.stats.player.hits, 11);
+  assert.equal(state.stats.player.troopsSpawned, 10);
+  assert.equal(state.troops.length, 10);
+  engine.stop();
+});
+
+test("táticas trocam vida por velocidade sem modificar tropas já invocadas", () => {
+  const results = {};
+  for (const tactic of ["balanced", "rush", "guard"]) {
+    const { engine, scheduler } = makeEngine();
+    engine.createMatch("tactics", "a", "b");
+    const answer = { correct: true, elapsedMs: 9999, kind: "choice", tactic };
+    engine.applyAnswer("tactics", "a", answer);
+    scheduler.tick();
+    const troop = engine.getMatch("tactics").state.troops[0];
+    results[tactic] = { hp: troop.hp, position: troop.position };
+    engine.applyAnswer("tactics", "a", { ...answer, tactic: "balanced" });
+    assert.equal(troop.tactic, tactic);
+    assert.equal(troop.hp, results[tactic].hp);
+    engine.stop();
+  }
+  assert.equal(results.balanced.hp, TROOP_CONFIG.scout.hp);
+  assert.equal(results.rush.hp, results.balanced.hp * 0.8);
+  assert.equal(results.guard.hp, results.balanced.hp * 1.3);
+  assert.ok(results.rush.position > results.balanced.position);
+  assert.ok(results.guard.position < results.balanced.position);
+});
+
+test("tática inválida, jogador estranho e pausa não consomem resposta", () => {
+  const { engine } = makeEngine();
+  engine.createMatch("tactics", "a", "b");
+  const answer = { correct: true, elapsedMs: 10, kind: "choice" };
+  const state = engine.getMatch("tactics").state;
+  const before = JSON.stringify(state);
+  assert.equal(
+    engine.applyAnswer("tactics", "a", { ...answer, tactic: "__proto__" }),
+    null,
+  );
+  assert.equal(engine.applyAnswer("tactics", "stranger", answer), null);
+  engine.pauseMatch("tactics");
+  assert.equal(engine.applyAnswer("tactics", "a", answer), null);
+  assert.equal(JSON.stringify(state), before);
+  engine.stop();
+});
 
 function fakeScheduler() {
   let captured = null;
@@ -48,7 +100,10 @@ test("tickAll avança a simulação de verdade: tropas spawnadas via applyAnswer
   // 8 tropas devem ter tempo de sobra pra cruzar a pista em ~30s simulados.
   for (let i = 0; i < 300; i++) scheduler.tick();
   const after = engine.getMatch("m1").state.enemyBaseHp;
-  assert.ok(after < before, "base inimiga deveria ter tomado dano das tropas da Alice");
+  assert.ok(
+    after < before,
+    "base inimiga deveria ter tomado dano das tropas da Alice",
+  );
   engine.stop();
 });
 
@@ -57,19 +112,39 @@ test("applyAnswer reproduz exatamente a regra decideTroopType do modo offline, p
   engine.createMatch("m1", "alice", "bob");
 
   // Alice erra uma vez (zera combo dela), Bob nunca respondeu ainda.
-  engine.applyAnswer("m1", "alice", { correct: false, elapsedMs: 0, kind: "choice" });
+  engine.applyAnswer("m1", "alice", {
+    correct: false,
+    elapsedMs: 0,
+    kind: "choice",
+  });
   let state = engine.getMatch("m1").state;
   assert.equal(state.combo.player, 0);
-  assert.equal(state.combo.enemy, 0, "resposta da Alice não pode afetar o combo do Bob");
+  assert.equal(
+    state.combo.enemy,
+    0,
+    "resposta da Alice não pode afetar o combo do Bob",
+  );
   assert.equal(state.stats.player.challengesTotal, 1);
   assert.equal(state.stats.enemy.challengesTotal, 0);
 
   // Bob acerta rápido 3x seguidas -> combo 1 (soldier, rápido), 2 (soldier),
   // 3 (tank, rápido E combo>=3) — mesma tabela de decideTroopType.
   const fastElapsed = 10;
-  let r1 = engine.applyAnswer("m1", "bob", { correct: true, elapsedMs: fastElapsed, kind: "choice" });
-  let r2 = engine.applyAnswer("m1", "bob", { correct: true, elapsedMs: fastElapsed, kind: "choice" });
-  let r3 = engine.applyAnswer("m1", "bob", { correct: true, elapsedMs: fastElapsed, kind: "choice" });
+  let r1 = engine.applyAnswer("m1", "bob", {
+    correct: true,
+    elapsedMs: fastElapsed,
+    kind: "choice",
+  });
+  let r2 = engine.applyAnswer("m1", "bob", {
+    correct: true,
+    elapsedMs: fastElapsed,
+    kind: "choice",
+  });
+  let r3 = engine.applyAnswer("m1", "bob", {
+    correct: true,
+    elapsedMs: fastElapsed,
+    kind: "choice",
+  });
   assert.equal(r1.troopType, decideTroopType(true, 1));
   assert.equal(r2.troopType, decideTroopType(true, 2));
   assert.equal(r3.troopType, decideTroopType(true, 3));
@@ -77,16 +152,32 @@ test("applyAnswer reproduz exatamente a regra decideTroopType do modo offline, p
 
   state = engine.getMatch("m1").state;
   assert.equal(state.combo.enemy, 3);
-  assert.equal(state.combo.player, 0, "as respostas do Bob não podem afetar o combo da Alice");
-  assert.equal(state.stats.player.challengesTotal, 1, "estatística da Alice não deveria ter mudado");
+  assert.equal(
+    state.combo.player,
+    0,
+    "as respostas do Bob não podem afetar o combo da Alice",
+  );
+  assert.equal(
+    state.stats.player.challengesTotal,
+    1,
+    "estatística da Alice não deveria ter mudado",
+  );
   engine.stop();
 });
 
 test("applyAnswer errado não invoca tropa e zera o combo daquele lado", () => {
   const { engine } = makeEngine();
   engine.createMatch("m1", "alice", "bob");
-  engine.applyAnswer("m1", "alice", { correct: true, elapsedMs: 10, kind: "choice" });
-  const result = engine.applyAnswer("m1", "alice", { correct: false, elapsedMs: 10, kind: "choice" });
+  engine.applyAnswer("m1", "alice", {
+    correct: true,
+    elapsedMs: 10,
+    kind: "choice",
+  });
+  const result = engine.applyAnswer("m1", "alice", {
+    correct: false,
+    elapsedMs: 10,
+    kind: "choice",
+  });
   assert.equal(result.troopType, null);
   assert.equal(engine.getMatch("m1").state.combo.player, 0);
   engine.stop();
@@ -95,8 +186,22 @@ test("applyAnswer errado não invoca tropa e zera o combo daquele lado", () => {
 test("applyAnswer devolve null pra partida inexistente ou jogador que não participa dela", () => {
   const { engine } = makeEngine();
   engine.createMatch("m1", "alice", "bob");
-  assert.equal(engine.applyAnswer("partida-que-nao-existe", "alice", { correct: true, elapsedMs: 1, kind: "choice" }), null);
-  assert.equal(engine.applyAnswer("m1", "estranho", { correct: true, elapsedMs: 1, kind: "choice" }), null);
+  assert.equal(
+    engine.applyAnswer("partida-que-nao-existe", "alice", {
+      correct: true,
+      elapsedMs: 1,
+      kind: "choice",
+    }),
+    null,
+  );
+  assert.equal(
+    engine.applyAnswer("m1", "estranho", {
+      correct: true,
+      elapsedMs: 1,
+      kind: "choice",
+    }),
+    null,
+  );
   engine.stop();
 });
 
@@ -107,7 +212,11 @@ test("forfeit declara o outro lado vencedor na hora e emite matchOver", () => {
   engine.on("matchOver", (payload) => events.push(payload));
 
   const result = engine.forfeit("m1", "player", "disconnect"); // Alice (player) desistiu
-  assert.equal(result.winner, "enemy", "Bob deveria vencer, já que a Alice ('player') desistiu");
+  assert.equal(
+    result.winner,
+    "enemy",
+    "Bob deveria vencer, já que a Alice ('player') desistiu",
+  );
   assert.equal(events.length, 1);
   assert.equal(events[0].reason, "disconnect");
   assert.equal(engine.getMatch("m1").ended, true);
@@ -137,30 +246,51 @@ test("uma partida com startsAt no futuro não avança até esse instante (fase d
     clearIntervalFn: scheduler.clearIntervalFn,
   });
   engine.createMatch("m1", "alice", "bob", currentTime + 3000); // começa em 3s
-  engine.applyAnswer("m1", "alice", { correct: true, elapsedMs: 10, kind: "choice" });
+  engine.applyAnswer("m1", "alice", {
+    correct: true,
+    elapsedMs: 10,
+    kind: "choice",
+  });
   const before = engine.getMatch("m1").state.timeRemaining;
   scheduler.tick();
   scheduler.tick();
-  assert.equal(engine.getMatch("m1").state.timeRemaining, before, "não deveria ter avançado antes de startsAt");
+  assert.equal(
+    engine.getMatch("m1").state.timeRemaining,
+    before,
+    "não deveria ter avançado antes de startsAt",
+  );
 
   currentTime += 3100;
   scheduler.tick();
-  assert.ok(engine.getMatch("m1").state.timeRemaining < before, "deveria avançar depois de startsAt");
+  assert.ok(
+    engine.getMatch("m1").state.timeRemaining < before,
+    "deveria avançar depois de startsAt",
+  );
   engine.stop();
 });
 
 test("pauseMatch congela timeRemaining e as tropas; resumeMatch volta a avançar de onde parou", () => {
   const { engine, scheduler } = makeEngine();
   engine.createMatch("m1", "alice", "bob");
-  engine.applyAnswer("m1", "alice", { correct: true, elapsedMs: 10, kind: "choice" });
+  engine.applyAnswer("m1", "alice", {
+    correct: true,
+    elapsedMs: 10,
+    kind: "choice",
+  });
   for (let i = 0; i < 20; i++) scheduler.tick(); // deixa o motor rodar um pouco antes de pausar
 
   const ok = engine.pauseMatch("m1");
   assert.equal(ok, true);
   const frozenTime = engine.getMatch("m1").state.timeRemaining;
-  const frozenPositions = engine.getMatch("m1").state.troops.map((t) => t.position);
+  const frozenPositions = engine
+    .getMatch("m1")
+    .state.troops.map((t) => t.position);
   for (let i = 0; i < 30; i++) scheduler.tick();
-  assert.equal(engine.getMatch("m1").state.timeRemaining, frozenTime, "pausada, timeRemaining não deveria mudar");
+  assert.equal(
+    engine.getMatch("m1").state.timeRemaining,
+    frozenTime,
+    "pausada, timeRemaining não deveria mudar",
+  );
   assert.deepEqual(
     engine.getMatch("m1").state.troops.map((t) => t.position),
     frozenPositions,
@@ -184,7 +314,11 @@ test("pauseMatch/resumeMatch numa partida inexistente ou já encerrada devolve f
 
   engine.createMatch("m1", "alice", "bob");
   engine.forfeit("m1", "player");
-  assert.equal(engine.pauseMatch("m1"), false, "partida já encerrada não pode ser pausada");
+  assert.equal(
+    engine.pauseMatch("m1"),
+    false,
+    "partida já encerrada não pode ser pausada",
+  );
   assert.equal(engine.resumeMatch("m1"), false);
   engine.stop();
 });

@@ -110,6 +110,9 @@ test("PvP via WebSocket: dois jogadores reais emparelham, jogam e o resultado fi
 
     const challengeA = await waitFor(msgsA, "challenge");
     const challengeB = await waitFor(msgsB, "challenge");
+    wsA.send(JSON.stringify({ type: "answer", matchId, challengeId: challengeA.challengeId, index: 0, tactic: "__proto__" }));
+    const invalidTactic = await waitFor(msgsA, "error");
+    assert.equal(invalidTactic.message, "Estratégia inválida.");
     assert.equal("answerIndex" in (challengeA.challenge ?? {}), false, "gabarito não pode vazar pro cliente");
 
     answerWhateverComesFirst(wsA, challengeA);

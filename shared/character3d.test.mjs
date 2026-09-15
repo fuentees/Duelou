@@ -2,6 +2,19 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { avatarOptions } from "./avatar.mjs";
 import { characterMesh, projectCharacter } from "./character3d.mjs";
+test("combat mesh uses fewer faces without losing depth or full rotation", () => {
+  for (const species of avatarOptions.species) {
+    const avatar = { species: species.id, color: "violet", accessory: "crown", frame: "round" };
+    const compact = characterMesh(avatar, false, true);
+    const portrait = characterMesh(avatar);
+    assert.ok(compact.length < portrait.length * 0.7);
+    for (let angle = 0; angle < 7; angle++) {
+      const projected = projectCharacter(compact, angle);
+      assert.ok(projected.length > 20);
+      assert.ok(projected.every(f => !/NaN|Infinity/.test(f.points)));
+    }
+  }
+});
 
 test("108 cosmetics produce finite 3D meshes and visible faces through a full turn", () => {
   let count = 0;
