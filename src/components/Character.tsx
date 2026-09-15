@@ -1,5 +1,5 @@
 import React, { memo, useMemo } from "react";
-import { View } from "react-native";
+import { Platform, View } from "react-native";
 import Svg, { Ellipse, Polygon } from "react-native-svg";
 import { readAvatar } from "../../shared/avatar.mjs";
 import { characterMesh, projectCharacter } from "../../shared/character3d.mjs";
@@ -40,7 +40,17 @@ function Character({
         borderColor: a.frame === "gold" ? "#C39832" : "#D7D0EA",
       }}
     >
-      <Svg width="100%" height="100%" viewBox="0 0 200 200" accessible={false}>
+      {/* react-native-svg's web Svg passes unknown props straight through to
+      the DOM <svg> element — accessible={false} became a raw (invalid)
+      "accessible" HTML attribute there. The parent View already owns
+      accessibility (accessible={!!label} above), so this only matters on
+      native, where Svg accepts real RN accessibility props. */}
+      <Svg
+        width="100%"
+        height="100%"
+        viewBox="0 0 200 200"
+        accessible={Platform.OS === "web" ? undefined : false}
+      >
         <Ellipse
           cx={100}
           cy={177}
