@@ -232,6 +232,9 @@ export default function PerfilTab({
       ) : (
         <Button onPress={() => setDeleting(true)}>Excluir conta</Button>
       )}
+      <Text style={s.footer}>
+        Desenvolvido por Roctiv Tecnologia Ltda{"\n"}© 2026 ROCTIV
+      </Text>
     </>
   );
 }

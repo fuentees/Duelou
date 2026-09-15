@@ -31,6 +31,12 @@ export const s = StyleSheet.create({
   hero: { color: palette.text, fontSize: 38, fontWeight: "800" },
   heading: { color: palette.text, fontSize: 19, fontWeight: "700" },
   muted: { color: palette.textDim, fontSize: 14, lineHeight: 22 },
+  footer: {
+    color: palette.textFaint,
+    fontSize: 11,
+    lineHeight: 16,
+    textAlign: "center",
+  },
   label: {
     color: palette.textDim,
     fontSize: 10,

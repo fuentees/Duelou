@@ -2,7 +2,7 @@
 
 Última atualização técnica: 13 de setembro de 2026.
 
-Substituir antes da publicação: [RAZÃO SOCIAL], [CNPJ], [ENDEREÇO], [E-MAIL DE PRIVACIDADE], [DOMÍNIO] e nomes dos fornecedores contratados. Revisão jurídica continua necessária.
+Controlador: Roctiv Tecnologia Ltda. Substituir antes da publicação: [CNPJ], [ENDEREÇO], [E-MAIL DE PRIVACIDADE], [DOMÍNIO] e nomes dos fornecedores contratados. Revisão jurídica continua necessária.
 
 ## Dados tratados
 
@@ -42,4 +42,4 @@ Tokens têm alta entropia e são armazenados como hash; a recuperação rotacion
 
 ## Alterações e contato
 
-Mudanças materiais serão informadas no aplicativo. Controlador: [RAZÃO SOCIAL], [CNPJ], [ENDEREÇO]. Contato: [E-MAIL DE PRIVACIDADE].
+Mudanças materiais serão informadas no aplicativo. Controlador: Roctiv Tecnologia Ltda, [CNPJ], [ENDEREÇO]. Contato: [E-MAIL DE PRIVACIDADE].

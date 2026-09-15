@@ -2,6 +2,7 @@
   "name": "duelou-app",
   "version": "1.2.0",
   "private": true,
+  "author": "Roctiv Tecnologia Ltda",
   "engines": {
     "node": ">=22.13.0"
   },

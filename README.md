@@ -41,3 +41,7 @@ Testes de API, tipos, bundle web e jornada de interface realizados localmente. N
 Uma entrega anterior registrou API em `duelou-api.fly.dev`; o ambiente externo não foi revalidado nem atualizado nesta revisão. Sem monetização, câmera ou push. Domínio próprio, dados jurídicos, contas de loja, build assinado e testes físicos continuam sendo etapas externas obrigatórias. O SDK 57 mira Android API 36; o audit mantém 10 alertas moderados transitivos no toolchain Expo sem correção compatível automática.
 
 [Plano de produto, níveis e evolução](docs/PLANO-PRODUTO.md) · [Operação, API e pendências](docs/OPERACAO.md).
+
+---
+
+Desenvolvido por Roctiv Tecnologia Ltda · © 2026 ROCTIV

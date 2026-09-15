@@ -2,7 +2,7 @@
 
 Última atualização: 9 de setembro de 2026.
 
-Substituir [RAZÃO SOCIAL], [CNPJ], [ENDEREÇO], [E-MAIL], [PAÍS/FORO] e revisar juridicamente antes da publicação.
+Empresa responsável: Roctiv Tecnologia Ltda. Substituir [CNPJ], [ENDEREÇO], [E-MAIL], [PAÍS/FORO] e revisar juridicamente antes da publicação.
 
 ## Serviço
 
@@ -18,7 +18,7 @@ O servidor calcula o resultado com regras versionadas. Falhas de aparelho, conex
 
 ## Conduta e propriedade
 
-Não usar apelido ofensivo, enganoso ou que viole direitos. A marca, interface, regras implementadas e software pertencem a [RAZÃO SOCIAL] ou seus licenciantes. Denúncias e suporte: [E-MAIL].
+Não usar apelido ofensivo, enganoso ou que viole direitos. A marca, interface, regras implementadas e software pertencem a Roctiv Tecnologia Ltda ou seus licenciantes. Denúncias e suporte: [E-MAIL].
 
 ## Compras
 
