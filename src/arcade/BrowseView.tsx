@@ -421,7 +421,11 @@ export default function BrowseView(p: Props) {
             </>
           ) : step === "create" ? (
             <>
+              {/* Quatro escolhas seguidas sem nenhum rótulo: dois segmentados
+                  e uma grade de 30 números, e só a do nível tinha uma frase
+                  explicando. Cada uma passa a dizer o que decide. */}
               <Text style={v.heading}>Criar sala</Text>
+              <Text style={v.fieldLabel}>Quem pode entrar</Text>
               <SegmentedControl
                 value={p.tab === "friends" ? "friends" : "online"}
                 onChange={p.setTab}
@@ -431,7 +435,14 @@ export default function BrowseView(p: Props) {
                 ]}
               />
               <Text style={v.description}>
-                Nível da sala: {p.difficulty}. Mesma prova para todos.
+                {p.tab === "friends"
+                  ? "Só entra quem receber o código."
+                  : "Aparece na lista de partidas abertas deste jogo."}
+              </Text>
+              <Text style={v.fieldLabel}>Nível · {p.difficulty}</Text>
+              <Text style={v.description}>
+                A mesma prova para todo mundo da sala, no nível que você
+                escolher aqui.
               </Text>
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
                 {Array.from({ length: 30 }, (_, i) => i + 1).map((n) => (
@@ -449,6 +460,7 @@ export default function BrowseView(p: Props) {
                   </Pressy>
                 ))}
               </View>
+              <Text style={v.fieldLabel}>Formato</Text>
               <SegmentedControl
                 value={p.format}
                 onChange={p.setFormat}
@@ -457,6 +469,12 @@ export default function BrowseView(p: Props) {
                   { id: "md3", label: "Melhor de 3" },
                 ]}
               />
+              <Text style={v.description}>
+                {p.format === "md3"
+                  ? "Até três provas; empate em vitórias termina empatado."
+                  : "Uma prova só, quem fizer mais pontos vence."}
+              </Text>
+              <Text style={v.fieldLabel}>Quantas pessoas cabem</Text>
               <SegmentedControl
                 value={String(p.capacity)}
                 onChange={(n) => p.setCapacity(Number(n))}
@@ -466,7 +484,9 @@ export default function BrowseView(p: Props) {
                 }))}
               />
               <Text style={v.description}>
-                Até três provas. Empate em vitórias termina empatado.
+                {p.capacity > 6
+                  ? "Sala grande: todo mundo faz a mesma prova e o placar sai junto."
+                  : "A partida começa quando o anfitrião quiser, com pelo menos dois."}
               </Text>
               <Button disabled={p.busy} onPress={p.onCreateRoom}>
                 Criar e entrar
@@ -539,6 +559,14 @@ const v = StyleSheet.create({
     borderColor: palette.border,
   },
   choiceTitle: { fontSize: 18, fontWeight: "800", color: palette.text },
+  fieldLabel: {
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 1,
+    color: palette.textFaint,
+    textTransform: "uppercase",
+    marginTop: 4,
+  },
   progressRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   progressTrack: {
     flex: 1,
